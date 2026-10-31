@@ -1,12 +1,17 @@
-//! The browser shell: CEF startup, the top-level window and the browser client. Startup is
+//! The browser shell: CEF startup, the top-level window with its tabs, address box and tab
+//! strip, keyboard shortcuts and the browser client. Startup is
 //! derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs),
 //! licensed Apache-2.0 OR MIT.
 
 use cef::*;
 
+mod address_box;
 mod app;
 pub mod client;
+mod commands;
 pub mod data_dir;
+mod tab_strip;
+mod tabs;
 mod window;
 
 #[cfg(target_os = "macos")]

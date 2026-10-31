@@ -1,11 +1,12 @@
 //! CEF application callbacks for the browser process.
 
 use cef::*;
+use mini_core::{
+    address::resolve_input,
+    settings::{SETTINGS_FILE, Settings},
+};
 
-use super::{client::MiniClient, window};
-
-/// Page loaded at startup when no `--url=` switch is given.
-const STARTUP_URL: &str = "about:blank";
+use super::{client::MiniClient, data_dir, window};
 
 wrap_app! {
     pub struct MiniApp;
@@ -59,8 +60,9 @@ wrap_browser_process_handler! {
                 context.set_chrome_color_scheme(ColorVariant::DARK, 0);
             }
 
-            let mut client = MiniClient::new();
-            window::open(&mut client, &startup_url());
+            let settings = Settings::load(&data_dir::app_data_dir().join(SETTINGS_FILE));
+            let url = startup_url(&settings.search_template);
+            window::open(MiniClient::new(), settings, url);
         }
 
         fn default_client(&self) -> Option<Client> {
@@ -69,16 +71,13 @@ wrap_browser_process_handler! {
     }
 }
 
-/// The `--url=` switch value, or [`STARTUP_URL`].
-fn startup_url() -> String {
-    let url = command_line_get_global()
+/// The `--url=` switch value resolved like address-box input, so it only ever loads a web
+/// address or a search. `None` (no switch or an empty one) starts with an empty tab.
+fn startup_url(search_template: &str) -> Option<String> {
+    let input = command_line_get_global()
         .map(|command_line| {
             CefString::from(&command_line.switch_value(Some(&CefString::from("url")))).to_string()
         })
         .unwrap_or_default();
-    if url.is_empty() {
-        STARTUP_URL.to_owned()
-    } else {
-        url
-    }
+    resolve_input(&input, search_template)
 }
