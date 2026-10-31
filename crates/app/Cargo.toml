@@ -1,0 +1,43 @@
+[package]
+# No hyphen: on Windows with the `sandbox` feature, CEF's `bootstrap.exe` is renamed to
+# `<name>.exe` and loads `<name>.dll`, and Cargo would name the library `mini_browser.dll`.
+name = "minibrowser"
+description = "mini-browser: a minimal, dark, chrome-less Chromium browser built on CEF Views."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Layout follows the cef-rs `cefsimple` example: on Windows with the sandbox the app is a
+# library loaded by `bootstrap.exe`; elsewhere it is the `minibrowser` binary. macOS also
+# needs the `minibrowser_helper` binary for the renderer, GPU and utility processes.
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "minibrowser"
+path = "src/main.rs"
+
+[[bin]]
+name = "minibrowser_helper"
+path = "src/bin/minibrowser_helper.rs"
+
+[features]
+default = ["sandbox"]
+sandbox = ["cef/sandbox"]
+
+[package.metadata.cef.bundle]
+helper_name = "minibrowser_helper"
+
+[dependencies]
+cef = { version = "=156.2.0", default-features = false }
+mini-core = { path = "../core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.3"
+objc2-foundation = "0.3.2"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSApplication",
+    "NSEvent",
+    "NSResponder",
+] }
