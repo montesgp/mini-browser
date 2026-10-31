@@ -47,12 +47,16 @@ enum HostKind {
 }
 
 /// Classifies scheme-less input whose authority (before any `/`, `?` or `#`) is a host with an
-/// optional port. Input with whitespace or user info (`@`) is never treated as a host.
+/// optional port. Input with whitespace or with user info (`@` in the authority) is never
+/// treated as a host.
 fn host_kind(input: &str) -> Option<HostKind> {
-    if input.contains(char::is_whitespace) || input.contains('@') {
+    if input.contains(char::is_whitespace) {
         return None;
     }
     let authority = input.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return None;
+    }
 
     if let Some(rest) = authority.strip_prefix('[') {
         let (ip, port) = rest.split_once(']')?;
@@ -177,6 +181,31 @@ mod tests {
         assert_eq!(resolve("user@example.com"), search("user%40example.com"));
         assert_eq!(resolve("localhost:abc"), search("localhost%3Aabc"));
         assert_eq!(resolve("a..com"), search("a..com"));
+    }
+
+    #[test]
+    fn user_info_in_the_authority_becomes_a_search() {
+        assert_eq!(resolve("user@example.com"), search("user%40example.com"));
+        assert_eq!(
+            resolve("user@example.com/path"),
+            search("user%40example.com%2Fpath")
+        );
+    }
+
+    #[test]
+    fn an_at_sign_after_the_authority_keeps_the_input_a_host() {
+        assert_eq!(
+            resolve("medium.com/@rauchg"),
+            Some("https://medium.com/@rauchg".into())
+        );
+        assert_eq!(
+            resolve("example.com?by=@me"),
+            Some("https://example.com?by=@me".into())
+        );
+        assert_eq!(
+            resolve("localhost:3000/#@x"),
+            Some("http://localhost:3000/#@x".into())
+        );
     }
 
     #[test]

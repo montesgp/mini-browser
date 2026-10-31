@@ -3,4 +3,5 @@
 
 pub mod address;
 pub mod settings;
+pub mod shortcuts;
 pub mod tabs;

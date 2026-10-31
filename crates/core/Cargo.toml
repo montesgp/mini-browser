@@ -1,6 +1,6 @@
 [package]
 name = "mini-core"
-description = "Platform-independent logic for mini-browser: address input, tabs and settings."
+description = "Platform-independent logic for mini-browser: address input, tabs, settings and shortcuts."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
