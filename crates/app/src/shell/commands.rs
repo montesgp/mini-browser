@@ -8,6 +8,9 @@ use super::{address_box, settings_box, tab_strip, tabs};
 
 /// The command bound to the key and modifiers of `event`, whatever the event type.
 fn command_for_event(event: &KeyEvent) -> Option<Command> {
+    // The flag's inner type is `i32` on Windows and `u32` on macOS/Linux, so the cast is
+    // only redundant on some platforms.
+    #[allow(clippy::unnecessary_cast)]
     let has = |flag: cef_event_flags_t| event.modifiers & (flag.0 as u32) != 0;
     let modifiers = Modifiers {
         shift: has(cef_event_flags_t::EVENTFLAG_SHIFT_DOWN),
