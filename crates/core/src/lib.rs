@@ -2,4 +2,5 @@
 //! with a plain `cargo test -p mini-core`.
 
 pub mod address;
+pub mod settings;
 pub mod tabs;
