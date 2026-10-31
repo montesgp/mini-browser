@@ -263,4 +263,24 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "{oops");
         fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn non_object_or_mistyped_json_is_corrupt() {
+        for json in [
+            "null",
+            "[]",
+            r#"{"padding":true}"#,
+            r#"{"padding":10,"searchTemplate":5}"#,
+        ] {
+            assert_eq!(Settings::from_json(json), Settings::default(), "{json}");
+        }
+    }
+
+    #[test]
+    fn odd_paddings_step_to_the_range_limits() {
+        let five = Settings::from_json(r#"{"padding":5}"#);
+        assert_eq!(five.with_padding_steps(-1).padding, 4);
+        let thirty_one = Settings::from_json(r#"{"padding":31}"#);
+        assert_eq!(thirty_one.with_padding_steps(1).padding, 32);
+    }
 }

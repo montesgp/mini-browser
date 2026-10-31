@@ -249,4 +249,9 @@ mod tests {
         assert_eq!(other(0x41, CTRL), None);
         assert_eq!(mac(0x41, CMD), None);
     }
+
+    #[test]
+    fn cmd_tab_is_not_bound_on_macos() {
+        assert_eq!(mac(key::TAB, CMD), None);
+    }
 }

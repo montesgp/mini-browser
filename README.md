@@ -33,7 +33,7 @@ In the address box, `Enter` navigates and `Esc` closes the box. What you type is
 - Something that looks like a host (`rauchg.com`, `vercel.com/home`, `medium.com/@user`) gets `https://`. `localhost` and IP addresses get `http://`.
 - Everything else is a search (Google by default), including any other scheme such as `javascript:`, `file:` or `data:`. The address box never runs script or opens local files.
 
-Drag the dark frame around the page to move the window; drag the window edges to resize it. Links that open a new window (`target=_blank`, `window.open`) open as a new tab instead.
+Drag the dark frame around the page to move the window; on Windows you can also drag the window edges to resize it (not yet checked on macOS and Linux). Links that open a new window (`target=_blank`, `window.open`) open as a new tab instead.
 
 You can also start on a page: `minibrowser --url=rauchg.com`. The `--url` value goes through the same resolution as the address box.
 
@@ -57,7 +57,7 @@ Settings live in `settings.json` inside the app data directory:
 - `padding`: frame width in pixels, 4 to 32 (default 8). Change it with the `−` / `+` buttons in the settings box (`Ctrl+,`); out-of-range values are clamped.
 - `searchTemplate`: an `http(s)` URL containing `{query}`, for example `https://duckduckgo.com/?q={query}`. Anything else falls back to Google.
 
-A corrupt settings file is ignored (defaults are used) and left untouched.
+A corrupt settings file is ignored and defaults are used; the file is left as is until you change a setting, which rewrites it.
 
 ## Security
 
@@ -105,11 +105,12 @@ Checks:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p mini-core
+cargo test -p minibrowser --lib   # app unit tests (Windows sandbox build only for now)
 ```
 
 ### Platform status
 
-Windows is built and tested. macOS and Linux share the same code and build through the same commands, but they have not been built or tested yet.
+Windows is built and tested. macOS and Linux share the same code and build through the same commands, but they have not been built or tested yet. The CI workflow (`.github/workflows/build.yml`) builds all three once the repository has a GitHub remote; it has not run yet.
 
 ## Project layout
 

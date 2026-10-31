@@ -235,4 +235,23 @@ mod tests {
             Some("https://duckduckgo.com/?q=rust+cef".into())
         );
     }
+
+    #[test]
+    fn more_non_web_schemes_never_load() {
+        for input in [
+            "JavaScript:alert(1)",
+            " file:///C:/x",
+            "about:blank",
+            "view-source:https://a.com",
+            "blob:https://a.com/x",
+            "ftp://a.com",
+            "http:/a.com",
+        ] {
+            let url = resolve(input).unwrap();
+            assert!(
+                url.starts_with("https://www.google.com/search?q="),
+                "{input} -> {url}"
+            );
+        }
+    }
 }
