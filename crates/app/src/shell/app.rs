@@ -6,10 +6,15 @@ use mini_core::{
     settings::{SETTINGS_FILE, Settings},
 };
 
-use super::{client::MiniClient, data_dir, window};
+use std::path::PathBuf;
 
+use super::{client::MiniClient, window};
+
+// `data_dir` is the app data directory holding the profile and the settings file.
 wrap_app! {
-    pub struct MiniApp;
+    pub struct MiniApp {
+        data_dir: PathBuf,
+    }
 
     impl App {
         fn on_before_command_line_processing(
@@ -24,7 +29,7 @@ wrap_app! {
         }
 
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
-            Some(MiniBrowserProcessHandler::new())
+            Some(MiniBrowserProcessHandler::new(self.data_dir.clone()))
         }
     }
 }
@@ -49,7 +54,9 @@ fn add_platform_switches(command_line: &mut CommandLine) {
 fn add_platform_switches(_command_line: &mut CommandLine) {}
 
 wrap_browser_process_handler! {
-    struct MiniBrowserProcessHandler;
+    struct MiniBrowserProcessHandler {
+        data_dir: PathBuf,
+    }
 
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
@@ -60,9 +67,10 @@ wrap_browser_process_handler! {
                 context.set_chrome_color_scheme(ColorVariant::DARK, 0);
             }
 
-            let settings = Settings::load(&data_dir::app_data_dir().join(SETTINGS_FILE));
+            let settings_path = self.data_dir.join(SETTINGS_FILE);
+            let settings = Settings::load(&settings_path);
             let url = startup_url(&settings.search_template);
-            window::open(MiniClient::new(), settings, url);
+            window::open(MiniClient::new(), settings, settings_path, url);
         }
 
         fn default_client(&self) -> Option<Client> {

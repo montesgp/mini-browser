@@ -1,12 +1,15 @@
 //! The tab strip: a thin dark row of tab titles at the top of the window, hidden by default.
-//! Clicking a title activates its tab.
+//! Clicking a title activates its tab; dragging the rest of the strip moves the window.
 
 use std::cell::RefCell;
 
 use cef::*;
 use mini_core::tabs::TabId;
 
-use super::{tabs, window::DarkPanelDelegate};
+use super::{
+    tabs,
+    window::{self, DarkPanelDelegate},
+};
 
 pub const STRIP_HEIGHT: i32 = 28;
 const STRIP_COLOR: u32 = 0xFF18_1818;
@@ -54,6 +57,23 @@ pub fn toggle() {
     if let Some(parent) = panel.parent_view().and_then(|parent| parent.as_panel()) {
         parent.layout();
     }
+    window::update_drag_regions();
+}
+
+/// The part of the visible strip right of the tab labels, in window coordinates.
+pub fn empty_area() -> Option<Rect> {
+    let panel = panel().filter(|panel| panel.is_visible() == 1)?;
+    let bounds = panel.bounds();
+    let count = i32::try_from(panel.child_view_count()).unwrap_or(0);
+    let labels_end = (count > 0)
+        .then(|| panel.child_view_at(count - 1))
+        .flatten()
+        .map_or(0, |last| last.bounds().x + last.bounds().width);
+    Some(Rect {
+        x: bounds.x + labels_end,
+        width: bounds.width - labels_end,
+        ..bounds
+    })
 }
 
 /// Rebuilds the strip from the tab model. Does nothing while the strip is hidden.
@@ -82,6 +102,7 @@ pub fn refresh() {
         panel.add_child_view(Some(&mut View::from(&button)));
     }
     panel.layout();
+    window::update_drag_regions();
 }
 
 /// Background and text color of a tab label.

@@ -1,5 +1,5 @@
-//! The browser shell: CEF startup, the top-level window with its tabs, address box and tab
-//! strip, keyboard shortcuts and the browser client. Startup is
+//! The browser shell: CEF startup, the top-level window with its padding frame, tabs, address
+//! box, tab strip and settings box, keyboard shortcuts and the browser client. Startup is
 //! derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs),
 //! licensed Apache-2.0 OR MIT.
 
@@ -10,6 +10,7 @@ mod app;
 pub mod client;
 mod commands;
 pub mod data_dir;
+mod settings_box;
 mod tab_strip;
 mod tabs;
 mod window;
@@ -56,11 +57,15 @@ pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut
         return 1;
     }
 
-    // Own profile directory, isolated from the user's other browsers.
-    let root_cache_path = data_dir::app_data_dir();
+    // Own profile directory, isolated from the user's other browsers. Without one the app does
+    // not start: a shared fallback such as the temp directory would mix profiles.
+    let Some(root_cache_path) = data_dir::app_data_dir() else {
+        eprintln!("{}", data_dir::MISSING_DIR_ERROR);
+        return 1;
+    };
     let cache_path = root_cache_path.join("profile");
 
-    let mut app = app::MiniApp::new();
+    let mut app = app::MiniApp::new(root_cache_path.clone());
     let settings = Settings {
         no_sandbox: (!cfg!(feature = "sandbox")).into(),
         root_cache_path: CefString::from(root_cache_path.to_string_lossy().as_ref()),

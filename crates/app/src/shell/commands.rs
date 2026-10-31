@@ -4,7 +4,7 @@
 use cef::{sys::cef_event_flags_t, *};
 use mini_core::shortcuts::{self, Command, Modifiers, Platform};
 
-use super::{address_box, tab_strip, tabs};
+use super::{address_box, settings_box, tab_strip, tabs};
 
 /// The command bound to the key and modifiers of `event`, whatever the event type.
 fn command_for_event(event: &KeyEvent) -> Option<Command> {
@@ -60,7 +60,6 @@ pub fn run(command: Command) {
         Command::Forward => tabs::with_active_browser(|browser| browser.go_forward()),
         Command::Reload => tabs::with_active_browser(|browser| browser.reload()),
         Command::Quit => tabs::quit(),
-        // The settings box is not built yet.
-        Command::OpenSettings => {}
+        Command::OpenSettings => settings_box::toggle(),
     }
 }

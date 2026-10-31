@@ -1,11 +1,13 @@
-//! The frameless, dark top-level window: the tab strip on top, the tabs' browser views below and
-//! the address box as an overlay. Window and browser view delegates are derived from the cef-rs
+//! The frameless, dark top-level window: a dark padding frame that drags the window, the tab
+//! strip on top, the tabs' browser views below and the address and settings boxes as overlays. Window and browser view delegates are derived from the cef-rs
 //! `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
-use cef::{sys::cef_color_id_t, *};
-use mini_core::settings::{PADDING_DEFAULT, Settings};
+use std::{cell::RefCell, path::PathBuf};
 
-use super::{address_box, commands, tab_strip, tabs};
+use cef::{sys::cef_color_id_t, *};
+use mini_core::settings::Settings;
+
+use super::{address_box, commands, settings_box, tab_strip, tabs};
 
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
@@ -16,12 +18,117 @@ const INITIAL_SIZE: Size = Size {
     height: 800,
 };
 
+/// The window and the view inset by the padding frame.
+struct Frame {
+    window: Window,
+    content: View,
+    padding: u32,
+}
+
+thread_local! {
+    static FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
+}
+
 /// Opens the top-level window with one tab loading `url`, or with an empty tab showing the
-/// address box when `url` is `None`.
-pub fn open(client: Client, settings: Settings, url: Option<String>) {
+/// address box when `url` is `None`. `settings_path` is where the settings box saves changes.
+pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Option<String>) {
     // The window shows itself once created.
-    let mut delegate = MiniWindowDelegate::new(client, settings, url);
+    let mut delegate = MiniWindowDelegate::new(client, settings, settings_path, url);
     window_create_top_level(Some(&mut delegate));
+}
+
+/// Changes the width of the padding frame and lays the window out again.
+pub fn set_padding(padding: u32) {
+    let Some((window, mut content)) = FRAME.with_borrow_mut(|frame| {
+        frame.as_mut().map(|frame| {
+            frame.padding = padding;
+            (frame.window.clone(), frame.content.clone())
+        })
+    }) else {
+        return;
+    };
+    apply_layout(&window, &mut content, padding);
+    window.layout();
+    update_drag_regions();
+}
+
+/// Sets the window's layout: `content` inset by `padding` and stretched over the rest.
+fn apply_layout(window: &Window, content: &mut View, padding: u32) {
+    if let Some(layout) = window.set_to_box_layout(Some(&padded_layout(padding))) {
+        layout.set_flex_for_view(Some(content), 1);
+    }
+}
+
+/// Makes the padding frame, and the tab strip outside its labels, drag the window. Call it
+/// whenever the window size, the padding or the tab strip changes.
+pub fn update_drag_regions() {
+    let Some((window, padding)) = FRAME.with_borrow(|frame| {
+        frame
+            .as_ref()
+            .map(|frame| (frame.window.clone(), frame.padding))
+    }) else {
+        return;
+    };
+    let size = window.size();
+    let mut regions: Vec<DraggableRegion> = frame_rects(size, i32::try_from(padding).unwrap_or(0))
+        .into_iter()
+        .chain(tab_strip::empty_area())
+        .map(|bounds| DraggableRegion {
+            bounds,
+            draggable: 1,
+        })
+        .collect();
+    regions.retain(|region| region.bounds.width > 0 && region.bounds.height > 0);
+    window.set_draggable_regions(Some(&regions));
+}
+
+/// Runs [`update_drag_regions`] once CEF has finished its current work. CEF updates the window's
+/// draggable regions from the page as it loads, which can cover the top of the frame.
+pub fn update_drag_regions_later() {
+    let mut task = UpdateDragRegions::new();
+    post_task(ThreadId::UI, Some(&mut task));
+}
+
+wrap_task! {
+    struct UpdateDragRegions;
+
+    impl Task {
+        fn execute(&self) {
+            update_drag_regions();
+        }
+    }
+}
+
+/// The four sides of a frame `padding` pixels wide inside a window of `size`.
+fn frame_rects(size: Size, padding: i32) -> [Rect; 4] {
+    let (width, height) = (size.width, size.height);
+    let inner_height = height - 2 * padding;
+    [
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: padding,
+        },
+        Rect {
+            x: 0,
+            y: height - padding,
+            width,
+            height: padding,
+        },
+        Rect {
+            x: 0,
+            y: padding,
+            width: padding,
+            height: inner_height,
+        },
+        Rect {
+            x: width - padding,
+            y: padding,
+            width: padding,
+            height: inner_height,
+        },
+    ]
 }
 
 /// Settings for every tab's browser.
@@ -88,6 +195,7 @@ wrap_window_delegate! {
     struct MiniWindowDelegate {
         client: Client,
         settings: Settings,
+        settings_path: PathBuf,
         url: Option<String>,
     }
 
@@ -106,6 +214,8 @@ wrap_window_delegate! {
 
         fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
             address_box::reposition();
+            settings_box::reposition();
+            update_drag_regions();
         }
     }
 
@@ -123,17 +233,20 @@ wrap_window_delegate! {
             container.set_to_fill_layout();
 
             window.set_background_color(BACKGROUND_COLOR);
-            let layout = window.set_to_box_layout(Some(&padded_layout(PADDING_DEFAULT)));
             if let Some(strip) = tab_strip::create() {
                 window.add_child_view(Some(&mut View::from(&strip)));
             }
             let mut container_view = View::from(&container);
             window.add_child_view(Some(&mut container_view));
-            if let Some(layout) = layout {
-                layout.set_flex_for_view(Some(&mut container_view), 1);
-            }
-            // Added last so it stays above the other views.
+            apply_layout(window, &mut container_view, self.settings.padding);
+            FRAME.set(Some(Frame {
+                window: window.clone(),
+                content: container_view,
+                padding: self.settings.padding,
+            }));
+            // Added last so they stay above the other views.
             address_box::create(window, &self.settings.search_template);
+            settings_box::create(window, self.settings.clone(), self.settings_path.clone());
 
             tabs::attach(window.clone(), container, self.client.clone());
             window.center_window(Some(&INITIAL_SIZE));
@@ -144,7 +257,9 @@ wrap_window_delegate! {
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
             tabs::detach();
             address_box::destroy();
+            settings_box::destroy();
             tab_strip::destroy();
+            FRAME.take();
         }
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
@@ -158,7 +273,7 @@ wrap_window_delegate! {
         }
 
         fn on_key_event(&self, _window: Option<&mut Window>, event: Option<&KeyEvent>) -> i32 {
-            commands::handle_event(event).into()
+            (settings_box::handle_escape(event) || commands::handle_event(event)).into()
         }
 
         fn on_theme_colors_changed(&self, window: Option<&mut Window>, _chrome_theme: i32) {

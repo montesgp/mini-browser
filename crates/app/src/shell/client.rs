@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use cef::*;
 
-use super::{commands, tabs};
+use super::{commands, tabs, window};
 
 thread_local! {
     static BROWSERS: RefCell<Vec<Browser>> = const { RefCell::new(Vec::new()) };
@@ -26,6 +26,27 @@ wrap_client! {
 
         fn display_handler(&self) -> Option<DisplayHandler> {
             Some(MiniDisplayHandler::new())
+        }
+
+        fn drag_handler(&self) -> Option<DragHandler> {
+            Some(MiniDragHandler::new())
+        }
+    }
+}
+
+wrap_drag_handler! {
+    struct MiniDragHandler;
+
+    impl DragHandler {
+        fn on_draggable_regions_changed(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _regions: Option<&[DraggableRegion]>,
+        ) {
+            // Pages never drag the window; CEF has just merged the page's regions into the
+            // window's, so restore the padding frame's.
+            window::update_drag_regions_later();
         }
     }
 }
