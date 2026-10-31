@@ -21,12 +21,12 @@ Stack: Rust + `cef` crate (tauri-apps/cef-rs, CEF/Chromium 156) + CEF Views. Bra
 
 ## Tasks
 
-- [x] T1 — S1, S2, S4, S6: crate scaffold, sandboxed bundle build, frameless dark window loading a page — worker (context backstop) — commit: `feat(app): add sandboxed frameless dark CEF window` (verified: bundle builds; launch screenshot shows frameless window, 8 px RGB(17,17,17) padding, rauchg.com dark; 6 processes via bootstrap.exe, none with --no-sandbox; %LOCALAPPDATA%\minibrowser\profile created)
+- [x] T1 — S1, S2, S4, S6: crate scaffold, sandboxed bundle build, frameless dark window loading a page — worker (context backstop) — commit: ab9353c (verified: bundle builds; launch screenshot shows frameless window, 8 px RGB(17,17,17) padding, rauchg.com dark; 6 processes via bootstrap.exe, none with --no-sandbox; %LOCALAPPDATA%\minibrowser\profile created)
 - [x] T2 — S3: address-input resolution (core, unit tests) — inline — commit: 57cc812 (RED 7/8 failing on stub, GREEN 8/8)
 - [x] T3 — S8: tab model (core, unit tests) — inline — commit: 8205334 (RED 10/12 failing on stub, GREEN 12/12)
 - [x] T4 — S9: settings model and persistence (core, unit tests) — inline — commit: 09e3e90 (RED 9/10 failing on stub, GREEN 10/10)
-- [ ] T5 — S3, S8: shell — address overlay, shortcuts, tabs, tab strip, popups as tabs — inline — commit: —
-- [ ] T6 — S9, S1: shell — padding frame, window drag, settings overlay — inline — commit: —
+- [ ] T5 — S3, S8: shell — address overlay, shortcuts, tabs, tab strip, popups as tabs; review follow-ups R1-url-switch-unfiltered / R3-startup-url-bypasses-resolution (`--url=` must go through `resolve_input`) and R3-address-at-sign-anywhere (`@` only rejects when inside the authority) — worker (context backstop) — commit: —
+- [ ] T6 — S9, S1: shell — padding frame, window drag, settings overlay; review follow-ups R3-negative-padding-not-clamped (negative padding clamps to 4 per S9) and R1-temp-profile-fallback (no app data dir => refuse to start, never a shared temp profile) — worker (context backstop) — commit: —
 - [ ] T7 — S4, S5, S7: README (credits, build per OS, security and maintenance) — inline — commit: —
 - [ ] T8 — S5: CI build matrix (Windows/macOS/Linux) — inline — commit: — (unverifiable until a remote exists)
 
@@ -41,4 +41,5 @@ Forecast: ~1,800 authored lines. Delivery: no remote yet; work-unit commits on `
 - L5 (user): "Adjunto el tweet la animacion se ve la interface bien limpia que es lo que quiero". Demo video frames show: frameless rounded window; empty tab with centered "Enter URL or search..." box; ⇧⌘F toggles a thin tab strip (title + URL); several tabs; a Settings box with a "Padding" slider. On-screen key badges belong to a screen-recording tool and are out of scope. Light theme in the video; ours is dark (S2).
 - L6 (user decision): project name "mini-browser" at `R:\repositories\personal\mini-browser`.
 - L7 (evidence): cef-rs needs cmake (Visual Studio 18 bundles cmake and ninja); with the `sandbox` feature on Windows the app builds as a cdylib loaded by CEF's `bootstrap.exe` via `bundle-cef-app`.
-- L8 (evidence/decision): on Windows every frameless CEF window stayed invisible until Chromium's native occlusion tracking was disabled; the browser process now gets `--disable-features=CalculateNativeWinOcclusion` (Windows only, merged with user flags). Rendering-only, no web-security effect; cost: no render throttling when fully covered. Accepted by the parent. Builds reuse CEF via `CEF_PATH=%TEMP%gent-mini-browser\cef\cef_windows_x86_64` (else cef-dll-sys downloads CEF into target/).
+- L8 (evidence/decision): on Windows every frameless CEF window stayed invisible until Chromium's native occlusion tracking was disabled; the browser process now gets `--disable-features=CalculateNativeWinOcclusion` (Windows only, merged with user flags). Rendering-only, no web-security effect; cost: no render throttling when fully covered. Accepted by the parent. Builds reuse CEF via `CEF_PATH=%TEMP%\agent-mini-browser\cef\cef_windows_x86_64` (else cef-dll-sys downloads CEF into target/).
+- L9 (evidence): native review lineage review-4e452311083bacb2 (tier high, lenses risk+reliability) over 22ca741..ab9353c: approved and acknowledged (authority burned). Seven non-blocking findings; the four actionable ones are assigned to T5/T6 above; R3-domain-edge-cases and R3-data-dir-untested are suggestions kept as optional follow-ups. Next reviewed boundary: ab9353c.
