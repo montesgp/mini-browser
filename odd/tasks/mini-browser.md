@@ -22,8 +22,8 @@ Stack: Rust + `cef` crate (tauri-apps/cef-rs, CEF/Chromium 156) + CEF Views. Bra
 ## Tasks
 
 - [ ] T1 — S1, S2, S4, S6: crate scaffold, sandboxed bundle build, frameless dark window loading a page — inline — commit: —
-- [ ] T2 — S3: address-input resolution (core, unit tests) — inline — commit: —
-- [ ] T3 — S8: tab model (core, unit tests) — inline — commit: —
+- [x] T2 — S3: address-input resolution (core, unit tests) — inline — commit: 57cc812 (RED 7/8 failing on stub, GREEN 8/8)
+- [x] T3 — S8: tab model (core, unit tests) — inline — commit: `feat(core): add tab model` (RED 10/12 failing on stub, GREEN 12/12)
 - [ ] T4 — S9: settings model and persistence (core, unit tests) — inline — commit: —
 - [ ] T5 — S3, S8: shell — address overlay, shortcuts, tabs, tab strip, popups as tabs — inline — commit: —
 - [ ] T6 — S9, S1: shell — padding frame, window drag, settings overlay — inline — commit: —
