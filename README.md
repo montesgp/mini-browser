@@ -119,3 +119,16 @@ Windows is built and tested. macOS and Linux share the same code and build throu
 | `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table. |
 | `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle. |
+
+## License
+
+mini-browser is free and open source, dual-licensed under either of:
+
+- [MIT License](LICENSE-MIT)
+- [Apache License 2.0](LICENSE-APACHE)
+
+at your option. Fork it, change it, ship it.
+
+Release builds bundle CEF and Chromium, which keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the `CREDITS.html` file inside each release archive.
+
+Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in mini-browser, as defined in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.
