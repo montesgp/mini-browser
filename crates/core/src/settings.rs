@@ -2,7 +2,7 @@
 
 use std::{fs, io, path::Path};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
 use crate::address::{DEFAULT_SEARCH_TEMPLATE, QUERY_PLACEHOLDER};
 
@@ -19,6 +19,7 @@ pub const SETTINGS_FILE: &str = "settings.json";
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     /// Width in pixels of the dark frame around the page; dragging it moves the window.
+    #[serde(deserialize_with = "clamped_padding")]
     pub padding: u32,
     /// Search URL with a `{query}` placeholder, used for address input that is not a URL.
     pub search_template: String,
@@ -88,6 +89,21 @@ impl Settings {
     }
 }
 
+/// Reads any JSON integer (negative or beyond `u32`) as a padding clamped to the valid range.
+/// Other values, including fractions and integers too large for JSON parsers to keep exact,
+/// are an error, so the whole file counts as corrupt.
+fn clamped_padding<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+    let number = serde_json::Number::deserialize(deserializer)?;
+    let padding = if let Some(value) = number.as_i64() {
+        value.clamp(i64::from(PADDING_MIN), i64::from(PADDING_MAX))
+    } else if number.as_u64().is_some() {
+        i64::from(PADDING_MAX)
+    } else {
+        return Err(D::Error::custom("padding must be an integer"));
+    };
+    Ok(padding as u32)
+}
+
 /// A search template must be an http(s) URL with a `{query}` placeholder.
 fn is_valid_search_template(template: &str) -> bool {
     let lower = template.to_ascii_lowercase();
@@ -153,10 +169,37 @@ mod tests {
         assert_eq!(Settings::from_json(r#"{"padding":4}"#).padding, 4);
         assert_eq!(Settings::from_json(r#"{"padding":32}"#).padding, 32);
         assert_eq!(Settings::from_json(r#"{"padding":33}"#).padding, 32);
+        assert_eq!(Settings::from_json(r#"{"padding":-5}"#).padding, 4);
         assert_eq!(
-            Settings::from_json(r#"{"padding":-5}"#),
-            Settings::default()
+            Settings::from_json(r#"{"padding":-9223372036854775808}"#).padding,
+            4
         );
+        assert_eq!(
+            Settings::from_json(r#"{"padding":18446744073709551615}"#).padding,
+            32
+        );
+    }
+
+    #[test]
+    fn negative_padding_is_clamped_and_keeps_the_other_fields() {
+        let settings = Settings::from_json(
+            r#"{"padding":-5,"searchTemplate":"https://duckduckgo.com/?q={query}"}"#,
+        );
+        assert_eq!(settings.padding, 4);
+        assert_eq!(
+            settings.search_template,
+            "https://duckduckgo.com/?q={query}"
+        );
+    }
+
+    #[test]
+    fn non_integer_padding_is_corrupt() {
+        for padding in ["10.5", "1e3", "99999999999999999999999", "null"] {
+            let json = format!(
+                r#"{{"padding":{padding},"searchTemplate":"https://duckduckgo.com/?q={{query}}"}}"#
+            );
+            assert_eq!(Settings::from_json(&json), Settings::default(), "{padding}");
+        }
     }
 
     #[test]
