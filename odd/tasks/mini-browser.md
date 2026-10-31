@@ -27,8 +27,8 @@ Stack: Rust + `cef` crate (tauri-apps/cef-rs, CEF/Chromium 156) + CEF Views. Bra
 - [x] T4 — S9: settings model and persistence (core, unit tests) — inline — commit: 09e3e90 (RED 9/10 failing on stub, GREEN 10/10)
 - [x] T5 — S3, S8: shell — address overlay, shortcuts, tabs, tab strip, popups as tabs; review follow-ups R1-url-switch-unfiltered / R3-startup-url-bypasses-resolution (`--url=` must go through `resolve_input`) and R3-address-at-sign-anywhere (`@` only rejects when inside the authority) — worker (context backstop) — commits: a29fb6d (core) + `feat(app): add address box, tabs and tab strip` (RED 12 failing, GREEN 47/47; functional checks a-h PASS with window screenshots)
 - [x] T6 — S9, S1: shell — padding frame, window drag, settings overlay; review follow-ups R3-negative-padding-not-clamped (negative padding clamps to 4 per S9) and R1-temp-profile-fallback (no app data dir => refuse to start, never a shared temp profile) — worker (context backstop) — commits: 7961d6a (core) + `feat(app): add padding frame, window drag and settings box` (RED 2 failing, GREEN 49/49 + app 2/2; functional checks a-g PASS: frame 8/14/4 px measured, settings persisted, drag on all four sides, edge resize works, no-data-dir exits 1)
-- [ ] T7 — S4, S5, S7: README (credits, build per OS, security and maintenance) — inline — commit: —
-- [ ] T8 — S5: CI build matrix (Windows/macOS/Linux) — inline — commit: — (unverifiable until a remote exists)
+- [x] T7 — S4, S5, S7: README (credits, build per OS, security and maintenance) — inline — commit: b126f52 (structural check: links/credits verified; no X/TikTok link)
+- [x] T8 — S5: CI build matrix (Windows/macOS/Linux) — inline — commit: `ci: add Windows/macOS/Linux build workflow` (YAML parses; not executed: no remote yet)
 
 Forecast: ~1,800 authored lines. Delivery: no remote yet; work-unit commits on `feat/v1`, delivery strategy decided when a remote exists.
 
