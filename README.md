@@ -13,6 +13,26 @@ Built on:
 - [cef-rs](https://github.com/tauri-apps/cef-rs) (the `cef` crate, by the Tauri team). The app layout and the `xtask` bundler are derived from its `cefsimple` example and `bundle-cef-app` tool (Apache-2.0 OR MIT).
 - [Chromium Embedded Framework (CEF)](https://bitbucket.org/chromiumembedded/cef) and Chromium.
 
+## Download
+
+Every version is published on the [Releases page](https://github.com/montesgp/mini-browser/releases); older versions stay available there.
+
+| Platform | File |
+| --- | --- |
+| Windows (x64) | `mini-browser-vX.Y.Z-windows-x64.zip` |
+| macOS (Apple Silicon) | `mini-browser-vX.Y.Z-macos-arm64.zip` |
+| Linux (x64) | `mini-browser-vX.Y.Z-linux-x64.tar.gz` |
+
+Each release also has `SHA256SUMS.txt`. Check your download before running it, for example `sha256sum -c SHA256SUMS.txt --ignore-missing` (Linux/macOS: `shasum -a 256 -c`) or `Get-FileHash` in PowerShell.
+
+Builds are not code-signed yet, so the operating system warns on first launch:
+
+- **Windows:** extract the zip and run `minibrowser.exe`. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
+- **macOS:** extract the zip and move the app to Applications. If macOS refuses to open it, run `xattr -dr com.apple.quarantine /Applications/minibrowser.app` once, or allow it under **System Settings → Privacy & Security**.
+- **Linux:** extract the archive and run `./minibrowser`. It needs the same system libraries as Google Chrome (NSS, GTK, X11/Wayland).
+
+Keep the extracted folder together: the app loads Chromium from the files next to it.
+
 ## Using it
 
 | Action | Windows / Linux | macOS |
@@ -111,6 +131,25 @@ cargo test -p minibrowser --lib   # app unit tests (Windows sandbox build only f
 ### Platform status
 
 Windows is built and tested. macOS and Linux share the same code and build through the same commands, but they have not been built or tested yet. The CI workflow (`.github/workflows/build.yml`) builds all three once the repository has a GitHub remote; it has not run yet.
+
+## Versioning and releases
+
+mini-browser follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. While the version is `0.x`, a minor bump may change behavior. A Chromium security update ships as a new patch or minor release, so staying on the latest release keeps you on a patched Chromium.
+
+The version lives in one place, `version` under `[workspace.package]` in `Cargo.toml`, and every release is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+To cut a release:
+
+1. Move the `Unreleased` notes in `CHANGELOG.md` under a new `## [X.Y.Z] - YYYY-MM-DD` heading and update the links at the bottom.
+2. Set `version = "X.Y.Z"` in `Cargo.toml` and run `cargo check` so `Cargo.lock` follows.
+3. Merge that change to `main`, then tag it and push the tag:
+
+   ```sh
+   git tag -a vX.Y.Z -m "mini-browser vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+The [release workflow](.github/workflows/release.yml) checks that the tag matches the `Cargo.toml` version and that `CHANGELOG.md` has a section for it, builds optimized bundles on Windows, macOS and Linux, and publishes them with `SHA256SUMS.txt` as the GitHub Release `vX.Y.Z`, using that changelog section as the release notes.
 
 ## Project layout
 
