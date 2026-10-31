@@ -1,0 +1,157 @@
+name: release
+
+# Publishes a GitHub Release with per-platform bundles for every `vX.Y.Z` tag.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check tag and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match Cargo.toml and CHANGELOG.md
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
+          if [ "v${version}" != "${tag}" ]; then
+            echo "::error::tag ${tag} does not match the Cargo.toml version ${version}"
+            exit 1
+          fi
+          if ! grep -q "^## \[${version}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.platform }})
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+          - os: macos-latest
+            platform: macos-arm64
+          - os: ubuntu-latest
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      PACKAGE: mini-browser-v${{ needs.check.outputs.version }}-${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y --no-progress
+
+      - name: Build release bundle
+        run: cargo run --release -p xtask --bin bundle -- minibrowser --release -o dist/bundle
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = "dist/$env:PACKAGE"
+          New-Item -ItemType Directory -Path $out | Out-Null
+          Copy-Item -Path dist/bundle/* -Destination $out -Recurse
+          Remove-Item -Path "$out/*.pdb", "$out/*.lib", "$out/CMakeLists.txt", "$out/archive.json" -ErrorAction SilentlyContinue
+          Copy-Item -Path README.md, CHANGELOG.md, LICENSE-MIT, LICENSE-APACHE, THIRD_PARTY_NOTICES.md -Destination $out
+          Compress-Archive -Path $out -DestinationPath "dist/$env:PACKAGE.zip"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          out="dist/${PACKAGE}"
+          mkdir -p "${out}"
+          for app in dist/bundle/*.app; do ditto "${app}" "${out}/$(basename "${app}")"; done
+          cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
+          credits="$(find "${out}" -name CREDITS.html -print -quit)"
+          if [ -n "${credits}" ]; then cp "${credits}" "${out}/CREDITS.html"; fi
+          (cd dist && ditto -c -k --keepParent "${PACKAGE}" "${PACKAGE}.zip")
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          out="dist/${PACKAGE}"
+          mkdir -p "${out}"
+          cp -R dist/bundle/. "${out}/"
+          rm -f "${out}/CMakeLists.txt" "${out}/archive.json"
+          cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
+          tar -C dist -czf "dist/${PACKAGE}.tar.gz" "${PACKAGE}"
+
+      - name: List package contents
+        shell: bash
+        run: ls -la "dist/${PACKAGE}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE }}
+          path: |
+            dist/${{ env.PACKAGE }}.zip
+            dist/${{ env.PACKAGE }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub Release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          awk -v heading="## [${VERSION}]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && !/^\[[^]]+\]: / { print }
+          ' CHANGELOG.md > notes.md
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
