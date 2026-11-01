@@ -35,7 +35,7 @@ Builds are not code-signed yet, so the operating system warns on first launch:
 
 - **Windows:** extract the zip and run `minibrowser.exe`. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
 - **macOS:** extract the zip and move the app to Applications. If macOS refuses to open it, run `xattr -dr com.apple.quarantine /Applications/minibrowser.app` once, or allow it under **System Settings → Privacy & Security**.
-- **Linux:** extract the archive and run `./minibrowser`. It needs the same system libraries as Google Chrome (NSS, GTK, X11/Wayland).
+- **Linux:** extract the archive and run `./minibrowser`. It needs the same system libraries as Google Chrome (NSS, GTK, X11/Wayland). On distributions that restrict unprivileged user namespaces (for example Ubuntu 23.10 and later), Chromium's sandbox needs its helper to be owned by root and setuid; if the app exits with a sandbox error, run `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in the extracted folder. Do not disable the sandbox instead.
 
 Keep the extracted folder together: the app loads Chromium from the files next to it.
 
