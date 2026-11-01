@@ -114,6 +114,10 @@ jobs:
           mkdir -p "${out}"
           cp -R dist/bundle/. "${out}/"
           rm -f "${out}/CMakeLists.txt" "${out}/archive.json"
+          # CEF ships libcef.so with debug symbols (~1.4 GB); stripping them cuts the archive
+          # size several-fold without changing behavior.
+          strip --strip-unneeded "${out}/libcef.so" "${out}/minibrowser"
+          ls -la "${out}/libcef.so" "${out}/minibrowser"
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
           tar -C dist -czf "dist/${PACKAGE}.tar.gz" "${PACKAGE}"
 
