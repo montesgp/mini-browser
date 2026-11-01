@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in mini-browser does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Security problems must be reported privately instead: see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you are running (for example v0.1.0) or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows (x64)
+        - macOS (Apple Silicon)
+        - Linux (x64)
+        - Other (say which below)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start mini-browser
+        2. Press Ctrl+L and type ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include error messages, terminal output or screenshots if you have them.
+    validations:
+      required: true
