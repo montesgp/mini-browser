@@ -1,0 +1,76 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+
+      # CMake ships with every hosted runner; Ninja does not on all of them.
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y --no-progress
+
+      - name: Cache cargo and CEF downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Core tests
+        run: cargo test -p mini-core
+
+      - name: App tests
+        run: cargo test -p minibrowser --lib
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Bundle
+        run: cargo run -p xtask --bin bundle -- minibrowser -o target/bundle
+
+  # Single required check for branch protection: green only when every build passed.
+  ci-gate:
+    if: always()
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all builds to pass
+        run: test "${{ needs.build.result }}" = "success"

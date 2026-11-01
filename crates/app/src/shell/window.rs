@@ -1,0 +1,384 @@
+//! The frameless, dark top-level window: a dark padding frame that drags the window, the tab
+//! strip on top, the tabs' browser views below and the address and settings boxes as overlays. Window and browser view delegates are derived from the cef-rs
+//! `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
+
+use std::{cell::RefCell, path::PathBuf};
+
+use cef::{sys::cef_color_id_t, *};
+use mini_core::settings::Settings;
+
+use super::{address_box, commands, settings_box, tab_strip, tabs};
+
+/// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
+pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
+
+/// Initial window size in density-independent pixels; the window opens centered.
+const INITIAL_SIZE: Size = Size {
+    width: 1280,
+    height: 800,
+};
+
+/// The window and the view inset by the padding frame.
+struct Frame {
+    window: Window,
+    content: View,
+    padding: u32,
+}
+
+thread_local! {
+    static FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
+}
+
+/// Opens the top-level window with one tab loading `url`, or with an empty tab showing the
+/// address box when `url` is `None`. `settings_path` is where the settings box saves changes.
+pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Option<String>) {
+    // The window shows itself once created.
+    let mut delegate = MiniWindowDelegate::new(client, settings, settings_path, url);
+    window_create_top_level(Some(&mut delegate));
+}
+
+/// Changes the width of the padding frame and lays the window out again.
+pub fn set_padding(padding: u32) {
+    let Some((window, mut content)) = FRAME.with_borrow_mut(|frame| {
+        frame.as_mut().map(|frame| {
+            frame.padding = padding;
+            (frame.window.clone(), frame.content.clone())
+        })
+    }) else {
+        return;
+    };
+    apply_layout(&window, &mut content, padding);
+    window.layout();
+    update_drag_regions();
+}
+
+/// Sets the window's layout: `content` inset by `padding` and stretched over the rest.
+fn apply_layout(window: &Window, content: &mut View, padding: u32) {
+    if let Some(layout) = window.set_to_box_layout(Some(&padded_layout(padding))) {
+        layout.set_flex_for_view(Some(content), 1);
+    }
+}
+
+/// Makes the padding frame, and the tab strip outside its labels, drag the window. Call it
+/// whenever the window size, the padding or the tab strip changes.
+pub fn update_drag_regions() {
+    let Some((window, padding)) = FRAME.with_borrow(|frame| {
+        frame
+            .as_ref()
+            .map(|frame| (frame.window.clone(), frame.padding))
+    }) else {
+        return;
+    };
+    let size = window.size();
+    let mut regions: Vec<DraggableRegion> = frame_rects(size, i32::try_from(padding).unwrap_or(0))
+        .into_iter()
+        .chain(tab_strip::empty_area())
+        .map(|bounds| DraggableRegion {
+            bounds,
+            draggable: 1,
+        })
+        .collect();
+    regions.retain(|region| region.bounds.width > 0 && region.bounds.height > 0);
+    window.set_draggable_regions(Some(&regions));
+}
+
+/// Runs [`update_drag_regions`] once CEF has finished its current work. CEF updates the window's
+/// draggable regions from the page as it loads, which can cover the top of the frame.
+pub fn update_drag_regions_later() {
+    let mut task = UpdateDragRegions::new();
+    post_task(ThreadId::UI, Some(&mut task));
+}
+
+wrap_task! {
+    struct UpdateDragRegions;
+
+    impl Task {
+        fn execute(&self) {
+            update_drag_regions();
+        }
+    }
+}
+
+/// The four sides of a frame `padding` pixels wide inside a window of `size`.
+fn frame_rects(size: Size, padding: i32) -> [Rect; 4] {
+    let (width, height) = (size.width, size.height);
+    let inner_height = height - 2 * padding;
+    [
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: padding,
+        },
+        Rect {
+            x: 0,
+            y: height - padding,
+            width,
+            height: padding,
+        },
+        Rect {
+            x: 0,
+            y: padding,
+            width: padding,
+            height: inner_height,
+        },
+        Rect {
+            x: width - padding,
+            y: padding,
+            width: padding,
+            height: inner_height,
+        },
+    ]
+}
+
+/// Settings for every tab's browser.
+pub fn browser_settings() -> BrowserSettings {
+    BrowserSettings {
+        background_color: BACKGROUND_COLOR,
+        ..Default::default()
+    }
+}
+
+/// Box layout that insets the content by `padding` pixels on every side and stretches it to
+/// fill the rest of the window.
+fn padded_layout(padding: u32) -> BoxLayoutSettings {
+    let padding = i32::try_from(padding).unwrap_or(i32::MAX);
+    BoxLayoutSettings {
+        inside_border_insets: Insets {
+            top: padding,
+            left: padding,
+            bottom: padding,
+            right: padding,
+        },
+        cross_axis_alignment: AxisAlignment::STRETCH,
+        ..Default::default()
+    }
+}
+
+/// Theme colors that keep the address box dark.
+const THEME_COLORS: [(cef_color_id_t, u32); 8] = [
+    (
+        cef_color_id_t::CEF_ColorTextfieldBackground,
+        address_box::BOX_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorTextfieldForeground,
+        address_box::TEXT_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorTextfieldForegroundPlaceholder,
+        address_box::PLACEHOLDER_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorTextfieldOutline,
+        address_box::BORDER_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorTextfieldSelectionBackground,
+        address_box::SELECTION_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorTextfieldSelectionForeground,
+        address_box::TEXT_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorFocusableBorderFocused,
+        address_box::BORDER_COLOR,
+    ),
+    (
+        cef_color_id_t::CEF_ColorFocusableBorderUnfocused,
+        address_box::BORDER_COLOR,
+    ),
+];
+
+wrap_window_delegate! {
+    struct MiniWindowDelegate {
+        client: Client,
+        settings: Settings,
+        settings_path: PathBuf,
+        url: Option<String>,
+    }
+
+    impl ViewDelegate {
+        fn preferred_size(&self, _view: Option<&mut View>) -> Size {
+            INITIAL_SIZE
+        }
+
+        fn on_theme_changed(&self, view: Option<&mut View>) {
+            // Every theme change (including the Chrome theme applied when the window is created)
+            // resets the background, so reapply the dark color here.
+            if let Some(view) = view {
+                view.set_background_color(BACKGROUND_COLOR);
+            }
+        }
+
+        fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
+            address_box::reposition();
+            settings_box::reposition();
+            update_drag_regions();
+        }
+    }
+
+    impl PanelDelegate {}
+
+    impl WindowDelegate {
+        fn on_window_created(&self, window: Option<&mut Window>) {
+            let Some(window) = window else {
+                return;
+            };
+            let Some(container) = panel_create(Some(&mut DarkPanelDelegate::new(BACKGROUND_COLOR, 0)))
+            else {
+                return;
+            };
+            container.set_to_fill_layout();
+
+            window.set_background_color(BACKGROUND_COLOR);
+            if let Some(strip) = tab_strip::create() {
+                window.add_child_view(Some(&mut View::from(&strip)));
+            }
+            let mut container_view = View::from(&container);
+            window.add_child_view(Some(&mut container_view));
+            apply_layout(window, &mut container_view, self.settings.padding);
+            FRAME.set(Some(Frame {
+                window: window.clone(),
+                content: container_view,
+                padding: self.settings.padding,
+            }));
+            // Added last so they stay above the other views.
+            address_box::create(window, &self.settings.search_template);
+            settings_box::create(window, self.settings.clone(), self.settings_path.clone());
+
+            tabs::attach(window.clone(), container, self.client.clone());
+            window.center_window(Some(&INITIAL_SIZE));
+            window.show();
+            tabs::open_tab(self.url.as_deref());
+        }
+
+        fn on_window_destroyed(&self, _window: Option<&mut Window>) {
+            tabs::detach();
+            address_box::destroy();
+            settings_box::destroy();
+            tab_strip::destroy();
+            FRAME.take();
+        }
+
+        fn can_close(&self, _window: Option<&mut Window>) -> i32 {
+            // Allow the window to close once every tab's browser says it's OK. Ask all of them,
+            // so each one starts closing.
+            let ready = tabs::browsers().iter().fold(true, |ready, browser| {
+                let closed = browser.host().is_none_or(|host| host.try_close_browser() == 1);
+                ready && closed
+            });
+            ready.into()
+        }
+
+        fn on_key_event(&self, _window: Option<&mut Window>, event: Option<&KeyEvent>) -> i32 {
+            (settings_box::handle_escape(event) || commands::handle_event(event)).into()
+        }
+
+        fn on_theme_colors_changed(&self, window: Option<&mut Window>, _chrome_theme: i32) {
+            if let Some(window) = window {
+                for (id, color) in THEME_COLORS {
+                    window.set_theme_color(id as i32, color);
+                }
+            }
+        }
+
+        fn is_frameless(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn with_standard_window_buttons(&self, _window: Option<&mut Window>) -> i32 {
+            0
+        }
+
+        fn can_resize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_maximize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_minimize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn window_runtime_style(&self) -> RuntimeStyle {
+            RuntimeStyle::DEFAULT
+        }
+    }
+}
+
+// A panel with a fixed dark background and, when `height` is not zero, a fixed height.
+wrap_panel_delegate! {
+    pub struct DarkPanelDelegate {
+        color: u32,
+        height: i32,
+    }
+
+    impl ViewDelegate {
+        fn preferred_size(&self, _view: Option<&mut View>) -> Size {
+            // An empty size keeps the layout's own preferred size.
+            Size {
+                width: 0,
+                height: self.height,
+            }
+        }
+
+        fn on_theme_changed(&self, view: Option<&mut View>) {
+            // Theme changes reset the background; reapply the dark color.
+            if let Some(view) = view {
+                view.set_background_color(self.color);
+            }
+        }
+    }
+
+    impl PanelDelegate {}
+}
+
+wrap_browser_view_delegate! {
+    pub struct MiniBrowserViewDelegate {}
+
+    impl ViewDelegate {}
+
+    impl BrowserViewDelegate {
+        fn delegate_for_popup_browser_view(
+            &self,
+            _browser_view: Option<&mut BrowserView>,
+            _settings: Option<&BrowserSettings>,
+            _client: Option<&mut Client>,
+            _is_devtools: i32,
+        ) -> Option<BrowserViewDelegate> {
+            Some(MiniBrowserViewDelegate::new())
+        }
+
+        fn on_popup_browser_view_created(
+            &self,
+            _browser_view: Option<&mut BrowserView>,
+            popup_browser_view: Option<&mut BrowserView>,
+            is_devtools: i32,
+        ) -> i32 {
+            // Pages' popups (`window.open`, `target=_blank`) become tabs of this window;
+            // DevTools keeps its default window.
+            match popup_browser_view {
+                Some(popup) if is_devtools == 0 => {
+                    tabs::adopt_popup(popup.clone());
+                    1
+                }
+                _ => 0,
+            }
+        }
+
+        fn chrome_toolbar_type(&self, _browser_view: Option<&mut BrowserView>) -> ChromeToolbarType {
+            ChromeToolbarType::NONE
+        }
+
+        fn browser_runtime_style(&self) -> RuntimeStyle {
+            // A Chrome style window hosts at most one Chrome style browser view but any number
+            // of Alloy style ones, and every tab is a browser view. Popups must use the style
+            // of their opener, which this delegate also provides.
+            RuntimeStyle::ALLOY
+        }
+    }
+}
