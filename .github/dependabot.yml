@@ -1,0 +1,17 @@
+# Keeps pinned GitHub Actions (by commit SHA) and Rust dependencies current through weekly PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # cef is bumped deliberately with each Chromium/CEF release, together with testing.
+      - dependency-name: cef
