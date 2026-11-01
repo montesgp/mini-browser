@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement that keeps mini-browser minimal.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        mini-browser stays chrome-less on purpose: shortcuts and opt-in settings fit; always-visible UI usually does not.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? Shortcuts, settings, behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
