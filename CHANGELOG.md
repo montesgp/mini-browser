@@ -4,6 +4,15 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Linux: the app now starts. The v0.1.0 Linux build could not find `libcef.so` next to the executable; it is now linked with an `$ORIGIN` runpath, and CI fails if the bundle cannot resolve its libraries.
+
+### Changed
+
+- Linux release archive is much smaller (about 158 MB instead of 373 MB): debug symbols are stripped from `libcef.so` and the app binary.
+- CI actions are pinned to commit SHAs and kept current by Dependabot.
+
 ## [0.1.0] - 2026-10-31
 
 First public release.

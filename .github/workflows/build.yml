@@ -66,6 +66,13 @@ jobs:
       - name: Bundle
         run: cargo run -p xtask --bin bundle -- minibrowser -o target/bundle
 
+      # Compiling is not enough: the executable must find libcef.so and its other libraries.
+      - name: Bundle resolves its shared libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          readelf -d target/bundle/minibrowser | grep -E 'RUNPATH|RPATH'
+          if ldd target/bundle/minibrowser | grep 'not found'; then exit 1; fi
+
   # Single required check for branch protection: green only when every build passed.
   ci-gate:
     if: always()

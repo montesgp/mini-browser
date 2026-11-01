@@ -118,6 +118,8 @@ jobs:
           # size several-fold without changing behavior.
           strip --strip-unneeded "${out}/libcef.so" "${out}/minibrowser"
           ls -la "${out}/libcef.so" "${out}/minibrowser"
+          readelf -d "${out}/minibrowser" | grep -E 'RUNPATH|RPATH'
+          if ldd "${out}/minibrowser" | grep 'not found'; then exit 1; fi
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
           tar -C dist -czf "dist/${PACKAGE}.tar.gz" "${PACKAGE}"
 
