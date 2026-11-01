@@ -25,6 +25,12 @@ Every version is published on the [Releases page](https://github.com/montesgp/mi
 
 Each release also has `SHA256SUMS.txt`. Check your download before running it, for example `sha256sum -c SHA256SUMS.txt --ignore-missing` (Linux/macOS: `shasum -a 256 -c`) or `Get-FileHash` in PowerShell.
 
+Every archive also carries a signed build-provenance attestation proving it was built by this repository's release workflow. With the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify mini-browser-vX.Y.Z-linux-x64.tar.gz -R montesgp/mini-browser
+```
+
 Builds are not code-signed yet, so the operating system warns on first launch:
 
 - **Windows:** extract the zip and run `minibrowser.exe`. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
@@ -149,7 +155,7 @@ To cut a release:
    git push origin vX.Y.Z
    ```
 
-The [release workflow](.github/workflows/release.yml) checks that the tag matches the `Cargo.toml` version and that `CHANGELOG.md` has a section for it, builds optimized bundles on Windows, macOS and Linux, and publishes them with `SHA256SUMS.txt` as the GitHub Release `vX.Y.Z`, using that changelog section as the release notes.
+The [release workflow](.github/workflows/release.yml) checks that the tagged commit is on `main`, that the tag matches the `Cargo.toml` version and that `CHANGELOG.md` has a section for it, builds optimized bundles on Windows, macOS and Linux, attests their build provenance, and publishes them with `SHA256SUMS.txt` as the GitHub Release `vX.Y.Z`, using that changelog section as the release notes.
 
 ## Project layout
 
