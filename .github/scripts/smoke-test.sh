@@ -12,6 +12,8 @@ url="https://example.com/"
 settle=20
 
 fail() { echo "::error::$*"; exit 1; }
+# Count processes whose command line matches $1 (0 when none; pgrep exits 1 then).
+count() { { pgrep -f "$1" || true; } | wc -l | tr -d ' '; }
 
 case "$(uname -s)" in
   Linux*)
@@ -26,9 +28,9 @@ case "$(uname -s)" in
     app=$!
     sleep "${settle}"
     kill -0 "${app}" 2>/dev/null || { tail -50 "${out}/app.log"; fail "app exited early"; }
-    procs=$(pgrep -f "${bundle}/minibrowser" | wc -l)
+    procs=$(count "${bundle}/minibrowser")
     sandboxed=0
-    for p in $(pgrep -f "${bundle}/minibrowser"); do
+    for p in $(pgrep -f "${bundle}/minibrowser" || true); do
       if [ "$(awk '/^Seccomp:/{print $2}' "/proc/${p}/status" 2>/dev/null)" = "2" ]; then
         sandboxed=$((sandboxed + 1))
       fi
@@ -41,19 +43,28 @@ case "$(uname -s)" in
     [ "${sandboxed}" -ge 1 ] || fail "no seccomp-sandboxed child process: the sandbox is not active"
     ;;
   Darwin*)
-    app_bundle="$(ls -d "${bundle}"/*.app | head -1)"
+    app_bundle=""
+    for candidate in "${bundle}"/*.app; do [ -d "${candidate}" ] && app_bundle="${candidate}" && break; done
+    [ -n "${app_bundle}" ] || fail "no .app bundle in ${bundle}"
+    main="${app_bundle}/Contents/MacOS/"
+    [ "$(count "${app_bundle}/Contents")" -eq 0 ] || fail "the app is already running"
     open -n "${app_bundle}" --args --url="${url}"
     sleep "${settle}"
-    procs=$(pgrep -f "${app_bundle}/Contents" | wc -l | tr -d ' ')
+    procs=$(count "${app_bundle}/Contents")
     echo "processes=${procs}"
+    [ "$(count "${main}")" -ge 1 ] || fail "the app's main process is not running"
     [ -n "${SMOKE_NO_SCREENSHOT:-}" ] || screencapture -x "${out}/screen.png" || true
     pkill -f "${app_bundle}/Contents" 2>/dev/null || true
     [ "${procs}" -ge 3 ] || fail "expected browser and helper processes, found ${procs}"
     ;;
   MINGW*|MSYS*|CYGWIN*)
+    running() { tasklist //FI "IMAGENAME eq minibrowser.exe" | grep -c minibrowser || true; }
+    [ "$(running)" -eq 0 ] || fail "minibrowser.exe is already running"
     "${bundle}/minibrowser.exe" --url="${url}" >"${out}/app.log" 2>&1 &
+    app=$!
     sleep "${settle}"
-    procs=$(tasklist //FI "IMAGENAME eq minibrowser.exe" | grep -c minibrowser || true)
+    kill -0 "${app}" 2>/dev/null || fail "app exited early"
+    procs=$(running)
     echo "processes=${procs}"
     [ -n "${SMOKE_NO_SCREENSHOT:-}" ] || powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$i=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; [System.Drawing.Graphics]::FromImage(\$i).CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$i.Save('${out}\screen.png')" || true
     taskkill //IM minibrowser.exe //F >/dev/null 2>&1 || true

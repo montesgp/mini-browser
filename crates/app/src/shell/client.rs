@@ -3,7 +3,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use cef::*;
@@ -17,6 +17,9 @@ thread_local! {
     /// Popups opened recently in the window. One shared budget (unit key) rather than one per
     /// opener, so a popup that opens another popup cannot reset the count.
     static POPUPS: RefCell<PopupThrottle<()>> = RefCell::new(PopupThrottle::default());
+    /// At most one "popup blocked" message every 10 seconds, so a page cannot flood stderr.
+    static BLOCKED_LOG: RefCell<PopupThrottle<()>> =
+        RefCell::new(PopupThrottle::new(1, Duration::from_secs(10)));
 }
 
 wrap_client! {
@@ -151,9 +154,10 @@ wrap_life_span_handler! {
             if browser.is_none() {
                 return 0;
             }
-            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow((), Instant::now()));
-            if !allowed {
-                eprintln!("minibrowser: popup blocked (more than 3 within 2 seconds)");
+            let now = Instant::now();
+            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow((), now));
+            if !allowed && BLOCKED_LOG.with_borrow_mut(|log| log.allow((), now)) {
+                eprintln!("minibrowser: blocking popups (more than 3 within 2 seconds)");
             }
             (!allowed).into()
         }
