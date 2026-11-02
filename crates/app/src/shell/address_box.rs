@@ -4,9 +4,12 @@
 use std::cell::RefCell;
 
 use cef::*;
-use mini_core::address::resolve_input;
+use mini_core::{address::resolve_input, layout};
 
-use super::{commands, tabs, window::DarkPanelDelegate};
+use super::{
+    commands, settings_box, tabs,
+    window::{self, DarkPanelDelegate},
+};
 
 pub const PLACEHOLDER: &str = "Enter URL or search…";
 /// Background of the box and its text field.
@@ -94,11 +97,13 @@ pub fn destroy() {
     ADDRESS_BOX.take();
 }
 
-/// Shows the box with `text` selected and focuses it.
+/// Shows the box with `text` selected and focuses it, closing the settings box: the two never
+/// stack.
 pub fn show(text: &str) {
     let Some((_, controller, _, textfield)) = handles() else {
         return;
     };
+    settings_box::close();
     textfield.set_text(Some(&CefString::from(text)));
     textfield.select_all(0);
     reposition();
@@ -119,14 +124,9 @@ pub fn reposition() {
         return;
     };
     let size = window.size();
-    let width = MAX_WIDTH.min(size.width - 2 * SIDE_MARGIN).max(1);
     let height = panel.preferred_size().height;
-    controller.set_bounds(Some(&Rect {
-        x: (size.width - width) / 2,
-        y: size.height / 5,
-        width,
-        height,
-    }));
+    let bounds = layout::floating_box(size.width, size.height, MAX_WIDTH, SIDE_MARGIN, height);
+    controller.set_bounds(Some(&window::cef_rect(bounds)));
 }
 
 /// Loads the typed address in the active tab. Empty input keeps the box open.
@@ -156,18 +156,40 @@ wrap_textfield_delegate! {
 
     impl TextfieldDelegate {
         fn on_key_event(&self, _textfield: Option<&mut Textfield>, event: Option<&KeyEvent>) -> i32 {
-            let Some(event) = event.filter(|event| event.type_ == KeyEventType::RAWKEYDOWN) else {
+            let Some(event) = event else {
                 return 0;
             };
-            match event.windows_key_code {
-                VK_RETURN => submit(),
-                VK_ESCAPE => {
-                    hide();
-                    tabs::focus_active_page();
-                }
+            let submit = match event.windows_key_code {
+                VK_RETURN => true,
+                VK_ESCAPE => false,
+                // Every event of a shortcut is swallowed, so its character never reaches the
+                // field.
                 _ => return commands::handle_event(Some(event)).into(),
+            };
+            if event.type_ == KeyEventType::RAWKEYDOWN {
+                // Move the focus once CEF is done with the key event (see `commands`).
+                let mut task = FinishInput::new(submit);
+                post_task(ThreadId::UI, Some(&mut task));
             }
             1
+        }
+    }
+}
+
+// Runs `Enter` (`submit`) or `Esc` (otherwise) in the address box.
+wrap_task! {
+    struct FinishInput {
+        submit: bool,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            if self.submit {
+                submit();
+            } else {
+                hide();
+                tabs::focus_active_page();
+            }
         }
     }
 }

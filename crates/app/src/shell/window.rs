@@ -5,7 +5,7 @@
 use std::{cell::RefCell, path::PathBuf};
 
 use cef::{sys::cef_color_id_t, *};
-use mini_core::settings::Settings;
+use mini_core::{layout, settings::Settings};
 
 use super::{address_box, commands, settings_box, tab_strip, tabs};
 
@@ -70,8 +70,10 @@ pub fn update_drag_regions() {
         return;
     };
     let size = window.size();
-    let mut regions: Vec<DraggableRegion> = frame_rects(size, i32::try_from(padding).unwrap_or(0))
+    let frame = layout::frame_rects(size.width, size.height, i32::try_from(padding).unwrap_or(0));
+    let mut regions: Vec<DraggableRegion> = frame
         .into_iter()
+        .map(cef_rect)
         .chain(tab_strip::empty_area())
         .map(|bounds| DraggableRegion {
             bounds,
@@ -99,36 +101,14 @@ wrap_task! {
     }
 }
 
-/// The four sides of a frame `padding` pixels wide inside a window of `size`.
-fn frame_rects(size: Size, padding: i32) -> [Rect; 4] {
-    let (width, height) = (size.width, size.height);
-    let inner_height = height - 2 * padding;
-    [
-        Rect {
-            x: 0,
-            y: 0,
-            width,
-            height: padding,
-        },
-        Rect {
-            x: 0,
-            y: height - padding,
-            width,
-            height: padding,
-        },
-        Rect {
-            x: 0,
-            y: padding,
-            width: padding,
-            height: inner_height,
-        },
-        Rect {
-            x: width - padding,
-            y: padding,
-            width: padding,
-            height: inner_height,
-        },
-    ]
+/// Converts a core rectangle to a CEF one.
+pub fn cef_rect(rect: layout::Rect) -> Rect {
+    Rect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+    }
 }
 
 /// Settings for every tab's browser.
@@ -319,11 +299,18 @@ wrap_panel_delegate! {
 
     impl ViewDelegate {
         fn preferred_size(&self, _view: Option<&mut View>) -> Size {
-            // An empty size keeps the layout's own preferred size.
+            // CEF ignores a size with a zero side and falls back to the layout's own preferred
+            // size, so a fixed height needs a non-zero width; the window stretches it anyway.
             Size {
-                width: 0,
+                width: i32::from(self.height != 0),
                 height: self.height,
             }
+        }
+
+        fn height_for_width(&self, _view: Option<&mut View>, _width: i32) -> i32 {
+            // The window's box layout asks for the height this way, which otherwise comes from
+            // the panel's own layout (its tallest child). 0 keeps that default.
+            self.height
         }
 
         fn on_theme_changed(&self, view: Option<&mut View>) {

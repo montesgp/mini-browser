@@ -60,14 +60,22 @@ pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut
     // Own profile directory, isolated from the user's other browsers. Without one the app does
     // not start: a shared fallback such as the temp directory would mix profiles.
     let Some(root_cache_path) = data_dir::app_data_dir() else {
-        eprintln!("{}", data_dir::MISSING_DIR_ERROR);
+        report_startup_error(data_dir::MISSING_DIR_ERROR);
         return 1;
     };
     let cache_path = root_cache_path.join("profile");
 
-    let mut app = app::MiniApp::new(root_cache_path.clone());
+    // Read now: CEF clears the browser process's global command line on `initialize`, because
+    // `command_line_args_disabled` is set below.
+    let url_input =
+        CefString::from(&cmd_line.switch_value(Some(&CefString::from("url")))).to_string();
+    let mut app = app::MiniApp::new(root_cache_path.clone(), url_input);
     let settings = Settings {
         no_sandbox: (!cfg!(feature = "sandbox")).into(),
+        // Chromium and CEF switches given by the user (`--no-sandbox`,
+        // `--remote-debugging-port`, ...) have no effect; the app sets its own switches in
+        // `on_before_command_line_processing`.
+        command_line_args_disabled: 1,
         root_cache_path: CefString::from(root_cache_path.to_string_lossy().as_ref()),
         cache_path: CefString::from(cache_path.to_string_lossy().as_ref()),
         background_color: window::BACKGROUND_COLOR,
@@ -91,4 +99,27 @@ pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut
 
     shutdown();
     0
+}
+
+/// Prints `message` and, on Windows, where the app has no console, also shows it in a message
+/// box.
+fn report_startup_error(message: &str) {
+    eprintln!("{message}");
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+
+        let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+        let (text, caption) = (wide(message), wide("mini-browser"));
+        // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call; a null owner
+        // window is allowed.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                caption.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
 }

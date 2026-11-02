@@ -1,15 +1,21 @@
 //! Browser-level callbacks and the list of open browsers. All of it runs on the CEF UI thread,
 //! so the list lives in thread-local storage.
 
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    time::Instant,
+};
 
 use cef::*;
+use mini_core::popups::PopupThrottle;
 
 use super::{commands, tabs, window};
 
 thread_local! {
     static BROWSERS: RefCell<Vec<Browser>> = const { RefCell::new(Vec::new()) };
     static CLOSING: Cell<bool> = const { Cell::new(false) };
+    /// Popups each page (keyed by browser identifier) opened recently.
+    static POPUPS: RefCell<PopupThrottle<i32>> = RefCell::new(PopupThrottle::default());
 }
 
 wrap_client! {
@@ -124,6 +130,31 @@ wrap_life_span_handler! {
     struct MiniLifeSpanHandler;
 
     impl LifeSpanHandler {
+        fn on_before_popup(
+            &self,
+            browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _popup_id: i32,
+            _target_url: Option<&CefString>,
+            _target_frame_name: Option<&CefString>,
+            _target_disposition: WindowOpenDisposition,
+            _user_gesture: i32,
+            _popup_features: Option<&PopupFeatures>,
+            _window_info: Option<&mut WindowInfo>,
+            _client: Option<&mut Option<Client>>,
+            _settings: Option<&mut BrowserSettings>,
+            _extra_info: Option<&mut Option<DictionaryValue>>,
+            _no_javascript_access: Option<&mut i32>,
+        ) -> i32 {
+            // Popups become tabs, so a page may only open a few at a time; cancel the rest.
+            let Some(browser) = browser else {
+                return 0;
+            };
+            let opener = browser.identifier();
+            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow(opener, Instant::now()));
+            (!allowed).into()
+        }
+
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
             if let Some(browser) = browser {
@@ -150,6 +181,8 @@ wrap_life_span_handler! {
             let Some(browser) = browser else {
                 return;
             };
+            let opener = browser.identifier();
+            POPUPS.with_borrow_mut(|popups| popups.forget(&opener));
             let remaining = BROWSERS.with_borrow_mut(|browsers| {
                 browsers.retain(|open| open.is_same(Some(&mut browser.clone())) == 0);
                 browsers.len()

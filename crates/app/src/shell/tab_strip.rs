@@ -23,6 +23,8 @@ const TITLE_MAX_CHARS: usize = 30;
 
 thread_local! {
     static STRIP: RefCell<Option<Panel>> = const { RefCell::new(None) };
+    /// The strip's label for each tab, in strip order.
+    static BUTTONS: RefCell<Vec<(TabId, LabelButton)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Creates the (hidden) strip panel.
@@ -41,6 +43,7 @@ pub fn create() -> Option<Panel> {
 
 pub fn destroy() {
     STRIP.take();
+    BUTTONS.take();
 }
 
 fn panel() -> Option<Panel> {
@@ -82,6 +85,7 @@ pub fn refresh() {
         return;
     };
     panel.remove_all_child_views();
+    let mut buttons = Vec::new();
     for entry in tabs::strip_entries() {
         let mut delegate = TabButtonDelegate::new(entry.id, entry.active);
         let text = CefString::from(short_title(&entry.title).as_str());
@@ -98,11 +102,36 @@ pub fn refresh() {
             width: TAB_MAX_WIDTH,
             height: STRIP_HEIGHT,
         }));
-        button.set_tooltip_text(Some(&CefString::from(entry.title.as_str())));
+        set_title(&button, &entry.title);
         panel.add_child_view(Some(&mut View::from(&button)));
+        buttons.push((entry.id, button));
     }
+    BUTTONS.set(buttons);
     panel.layout();
     window::update_drag_regions();
+}
+
+/// Shows a new title on the label of `tab`, without rebuilding the strip.
+pub fn retitle(tab: TabId, title: &str) {
+    let Some(panel) = panel().filter(|panel| panel.is_visible() == 1) else {
+        return;
+    };
+    let Some(button) = BUTTONS.with_borrow(|buttons| {
+        buttons
+            .iter()
+            .find(|(id, _)| *id == tab)
+            .map(|(_, button)| button.clone())
+    }) else {
+        return;
+    };
+    set_title(&button, title);
+    panel.layout();
+    window::update_drag_regions();
+}
+
+fn set_title(button: &LabelButton, title: &str) {
+    button.set_text(Some(&CefString::from(short_title(title).as_str())));
+    button.set_tooltip_text(Some(&CefString::from(title)));
 }
 
 /// Background and text color of a tab label.

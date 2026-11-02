@@ -10,10 +10,12 @@ use std::path::PathBuf;
 
 use super::{client::MiniClient, window};
 
-// `data_dir` is the app data directory holding the profile and the settings file.
+// `data_dir` is the app data directory holding the profile and the settings file;
+// `url_input` is the value of the `--url=` switch, empty without one.
 wrap_app! {
     pub struct MiniApp {
         data_dir: PathBuf,
+        url_input: String,
     }
 
     impl App {
@@ -29,14 +31,18 @@ wrap_app! {
         }
 
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
-            Some(MiniBrowserProcessHandler::new(self.data_dir.clone()))
+            Some(MiniBrowserProcessHandler::new(
+                self.data_dir.clone(),
+                self.url_input.clone(),
+            ))
         }
     }
 }
 
 /// On Windows, Chromium's native window occlusion tracking reports the frameless window as
 /// occluded, so it never presents a frame and stays invisible. Disabling the feature only
-/// affects rendering; it keeps any `--disable-features` the user passed.
+/// affects rendering. User-supplied switches are ignored (`command_line_args_disabled`), but
+/// switches added here still apply, merged with any `--disable-features` already present.
 #[cfg(target_os = "windows")]
 fn add_platform_switches(command_line: &mut CommandLine) {
     const FEATURE: &str = "CalculateNativeWinOcclusion";
@@ -56,6 +62,7 @@ fn add_platform_switches(_command_line: &mut CommandLine) {}
 wrap_browser_process_handler! {
     struct MiniBrowserProcessHandler {
         data_dir: PathBuf,
+        url_input: String,
     }
 
     impl BrowserProcessHandler {
@@ -69,7 +76,9 @@ wrap_browser_process_handler! {
 
             let settings_path = self.data_dir.join(SETTINGS_FILE);
             let settings = Settings::load(&settings_path);
-            let url = startup_url(&settings.search_template);
+            // `--url=` is resolved like address-box input, so it only ever loads a web address
+            // or a search. `None` (no switch or an empty one) starts with an empty tab.
+            let url = resolve_input(&self.url_input, &settings.search_template);
             window::open(MiniClient::new(), settings, settings_path, url);
         }
 
@@ -77,15 +86,4 @@ wrap_browser_process_handler! {
             Some(MiniClient::new())
         }
     }
-}
-
-/// The `--url=` switch value resolved like address-box input, so it only ever loads a web
-/// address or a search. `None` (no switch or an empty one) starts with an empty tab.
-fn startup_url(search_template: &str) -> Option<String> {
-    let input = command_line_get_global()
-        .map(|command_line| {
-            CefString::from(&command_line.switch_value(Some(&CefString::from("url")))).to_string()
-        })
-        .unwrap_or_default();
-    resolve_input(&input, search_template)
 }
