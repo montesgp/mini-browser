@@ -258,16 +258,13 @@ mod tests {
     #[test]
     fn title_and_url_updates_apply_to_the_given_tab() {
         let (mut tabs, [a, b, _]) = three_with_middle_active();
-        tabs.set_url(a, "https://rauchg.com/");
-        tabs.set_title(a, "Guillermo Rauch");
+        tabs.set_url(a, "https://github.com/");
+        tabs.set_title(a, "GitHub");
         assert_eq!(
             tabs.get(a).map(|tab| tab.url.as_str()),
-            Some("https://rauchg.com/")
+            Some("https://github.com/")
         );
-        assert_eq!(
-            tabs.get(a).map(|tab| tab.title.as_str()),
-            Some("Guillermo Rauch")
-        );
+        assert_eq!(tabs.get(a).map(|tab| tab.title.as_str()), Some("GitHub"));
         assert_eq!(tabs.get(b).map(|tab| tab.url.as_str()), Some(""));
     }
 

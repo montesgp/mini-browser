@@ -122,8 +122,8 @@ mod tests {
     #[test]
     fn http_and_https_urls_load_as_typed() {
         assert_eq!(
-            resolve("https://rauchg.com"),
-            Some("https://rauchg.com".into())
+            resolve("https://github.com"),
+            Some("https://github.com".into())
         );
         assert_eq!(
             resolve("  http://example.com/a?b=c#d "),
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn host_like_input_gets_https() {
-        assert_eq!(resolve("rauchg.com"), Some("https://rauchg.com".into()));
+        assert_eq!(resolve("github.com"), Some("https://github.com".into()));
         assert_eq!(
             resolve("vercel.com/home"),
             Some("https://vercel.com/home".into())
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn plain_words_become_a_search() {
-        assert_eq!(resolve("rauch"), search("rauch"));
+        assert_eq!(resolve("github"), search("github"));
         assert_eq!(resolve("how to rust"), search("how+to+rust"));
         assert_eq!(resolve("foo.com bar"), search("foo.com+bar"));
     }
@@ -195,8 +195,8 @@ mod tests {
     #[test]
     fn an_at_sign_after_the_authority_keeps_the_input_a_host() {
         assert_eq!(
-            resolve("medium.com/@rauchg"),
-            Some("https://medium.com/@rauchg".into())
+            resolve("medium.com/@user"),
+            Some("https://medium.com/@user".into())
         );
         assert_eq!(
             resolve("example.com?by=@me"),

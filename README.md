@@ -49,7 +49,7 @@ Keep the extracted folder together: the app needs the files next to it.
 | Change the frame size | `Ctrl+,` | `Cmd+,` |
 | Quit | `Ctrl+Q` | `Cmd+Q` |
 
-Drag the dark frame to move the window. Type a website (`rauchg.com`) or any words to search.
+Drag the dark frame to move the window. Type a website (`github.com`) or any words to search.
 
 ## Good to know
 
@@ -122,7 +122,7 @@ Windows is built, tested and exercised by hand. macOS (Apple Silicon) and Linux 
 Implemented in `crates/core/src/address.rs`:
 
 - `http://` and `https://` input loads as typed.
-- Host-like input gets `https://`: at least two dot-separated labels ending in an alphabetic or punycode TLD, no `@` in the authority (`rauchg.com`, `vercel.com/home`, `medium.com/@user`). `localhost` and IP addresses get `http://`.
+- Host-like input gets `https://`: at least two dot-separated labels ending in an alphabetic or punycode TLD, no `@` in the authority (`github.com`, `vercel.com/home`, `medium.com/@user`). `localhost` and IP addresses get `http://`.
 - Everything else is a search through the configured template, including any other scheme (`javascript:`, `file:`, `data:`, `chrome:`). Empty input does nothing.
 
 ## Settings file
