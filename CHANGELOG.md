@@ -22,6 +22,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 - Linux release archive is much smaller (about 158 MB instead of 373 MB): debug symbols are stripped from `libcef.so` and the app binary.
 - CI actions are pinned to commit SHAs and kept current by Dependabot.
+- CI now launches the real app on Windows, macOS and Linux (smoke test with screenshots); on Linux it also checks that Chromium's sandbox is active.
 
 ## [0.1.0] - 2026-10-31
 

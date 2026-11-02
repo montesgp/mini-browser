@@ -116,7 +116,7 @@ Start on a page with `minibrowser --url=<input>`; the value goes through the sam
 
 ### Platform status
 
-Windows is built, tested and exercised by hand. macOS (Apple Silicon) and Linux (x64) compile, pass tests and are bundled by CI and the release workflow, but nobody has launched those builds by hand yet. Windows ARM64, Linux ARM64 and Intel Macs are supported by cef-rs but not built.
+Windows is built, tested and exercised by hand. Linux (x64) was run by hand in WSL2 with WSLg (Ubuntu 26.04): it renders, and its renderers run inside Chromium's namespace and seccomp sandbox. macOS (Apple Silicon) compiles, passes tests and is bundled, but nobody has used it by hand yet. CI launches the real app on all three systems (`.github/scripts/smoke-test.sh`): it must stay up with its helper processes, and on Linux with seccomp-sandboxed children. Windows ARM64, Linux ARM64 and Intel Macs are supported by cef-rs but not built.
 
 ## Address resolution
 
