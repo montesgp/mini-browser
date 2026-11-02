@@ -24,7 +24,7 @@ Work through the improvement backlog left after v0.1.0: smaller Linux release, p
 - [x] T1 — S2: strip `libcef.so` and the binary in Linux release packaging — inline — commit: 36b059b (measured on the v0.1.0 artifact in WSL: libcef.so 1,476 MB → 277 MB, archive 373 MB → 158 MB)
 - [x] T2 — S3: pin actions by SHA, add Dependabot — inline — commit: 8c0c79e (YAML parses; no `@vN` refs left)
 - [ ] T6 — S6: `$ORIGIN` runpath for the Linux binary + CI library-resolution check + CHANGELOG — inline — commit: `fix(app): let the Linux build find libcef.so`
-- [ ] T3 — S4: review findings in core/app with tests and Windows functional checks — worker — commit: —
+- [x] T3 — S4: review findings in core/app with tests and Windows functional checks — worker — commits: 0342a50 (core, RED 12 → GREEN 65), a4cfecc (app), 02afe47 (docs), `fix(app): share the pop-up budget across the window` (review follow-up)
 - [ ] T4 — S1: PRs opened; merge each after `ci-gate` passes (not before 2026-11-03) — inline — merge: —
 - [ ] T5 — S5: answer the VM question with options — inline — no commit
 
@@ -34,3 +34,4 @@ Work through the improvement backlog left after v0.1.0: smaller Linux release, p
 - L2 (evidence): this PC is a Ryzen 5 2600X, 32 GB RAM, virtualization enabled, Windows 11 Pro, with WSL2 Ubuntu 26.04 already installed (plus docker-desktop). WSL Ubuntu has binutils `strip` 2.46.
 - L3 (decision): actions are pinned to the newest release within the major already used (checkout v4.4.0, cache v4.3.0, upload-artifact v4.6.2, download-artifact v4.3.0, attest-build-provenance v2.4.0) instead of jumping to the latest majors (v7, v6, v7, v8, v4), so pinning changes no behavior; Dependabot proposes major upgrades separately.
 - L4 (evidence): v0.1.0 Linux artifact in WSL: `readelf -d minibrowser` shows no RPATH/RUNPATH and `./minibrowser` fails with `libcef.so: cannot open shared object file`. With `LD_LIBRARY_PATH=.` (simulating `$ORIGIN`) only system libraries are missing: libasound.so.2, libnspr4.so, libnss3.so, libnssutil3.so, libsmime3.so. WSLg display is available (DISPLAY=:0). CI never caught it because it builds and bundles but never resolves or launches the executable.
+- L5 (evidence): worker fixed all S4 findings with Windows functional checks (popup cap 3/2 s, MessageBox for missing data dir, settings save warning, strip height, overlay exclusivity, focus ring, `--no-sandbox`/`--remote-debugging-port` ignored with a negative control, `--url` still works). Native review review-fd55909b16b50f54 (risk+resilience+reliability) over 1ba2356..02afe47 approved and acknowledged; three lenses flagged that a per-opener popup budget is bypassed by popup chains, so the budget is now window-wide (unit key) and refusals are logged.

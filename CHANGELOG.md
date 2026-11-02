@@ -15,7 +15,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Security
 
-- A page can open at most 3 popups (which become tabs) within 2 seconds; further popups are blocked. Tabs you open with `Ctrl/Cmd+T` are not limited.
+- Pages can open at most 3 popups (which become tabs) within 2 seconds, shared across the window so a chain of popups cannot reset the count; further popups are blocked. Tabs you open with `Ctrl/Cmd+T` are not limited.
 - Chromium and CEF command-line switches such as `--no-sandbox`, `--disable-web-security` or `--remote-debugging-port` are ignored; `--url` still works.
 
 ### Changed

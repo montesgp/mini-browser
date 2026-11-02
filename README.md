@@ -54,7 +54,7 @@ Drag the dark frame to move the window. Type a website (`rauchg.com`) or any wor
 ## Good to know
 
 - **Camera, microphone and location requests are not granted.** It is made for showing pages, not for joining calls; use your main browser for those.
-- **Pop-ups open as tabs, a few at a time.** A page can open at most 3 pop-up tabs every 2 seconds, so nothing can flood your window.
+- **Pop-ups open as tabs, a few at a time.** Pages can open at most 3 pop-up tabs every 2 seconds in total, so nothing can flood your window.
 - **No downloads, printing or find-in-page** yet.
 - **Keep it updated.** Each release ships a recent Chromium; newer releases carry its security fixes.
 
@@ -154,7 +154,7 @@ The same directory holds the browser profile (`profile/`). If no app data direct
 - **Sandbox on** on every platform. On Windows the bundle runs through CEF's `bootstrap.exe`, which hosts the app's DLL so renderer, GPU and utility processes start sandboxed.
 - **Isolated profile** in the app data directory.
 - **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
-- **Pop-up throttle:** pop-ups become tabs, at most 3 per opening page every 2 seconds (`mini_core::popups::PopupThrottle`); extra ones are cancelled.
+- **Pop-up throttle:** pop-ups become tabs, at most 3 per window every 2 seconds, shared by all pages so a chain of pop-ups cannot reset it (`mini_core::popups::PopupThrottle` with one key); extra ones are cancelled and logged to stderr.
 - **No permission prompts:** tabs use CEF's Alloy runtime style (CEF allows one Chrome-style browser per window), which has no permission UI, and no permission handler is registered, so camera, microphone, location and similar requests are not granted.
 
 Trade-offs:

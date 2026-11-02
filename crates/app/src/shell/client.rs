@@ -14,8 +14,9 @@ use super::{commands, tabs, window};
 thread_local! {
     static BROWSERS: RefCell<Vec<Browser>> = const { RefCell::new(Vec::new()) };
     static CLOSING: Cell<bool> = const { Cell::new(false) };
-    /// Popups each page (keyed by browser identifier) opened recently.
-    static POPUPS: RefCell<PopupThrottle<i32>> = RefCell::new(PopupThrottle::default());
+    /// Popups opened recently in the window. One shared budget (unit key) rather than one per
+    /// opener, so a popup that opens another popup cannot reset the count.
+    static POPUPS: RefCell<PopupThrottle<()>> = RefCell::new(PopupThrottle::default());
 }
 
 wrap_client! {
@@ -146,12 +147,14 @@ wrap_life_span_handler! {
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut i32>,
         ) -> i32 {
-            // Popups become tabs, so a page may only open a few at a time; cancel the rest.
-            let Some(browser) = browser else {
+            // Popups become tabs, so the window only accepts a few at a time; cancel the rest.
+            if browser.is_none() {
                 return 0;
-            };
-            let opener = browser.identifier();
-            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow(opener, Instant::now()));
+            }
+            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow((), Instant::now()));
+            if !allowed {
+                eprintln!("minibrowser: popup blocked (more than 3 within 2 seconds)");
+            }
             (!allowed).into()
         }
 
@@ -181,8 +184,6 @@ wrap_life_span_handler! {
             let Some(browser) = browser else {
                 return;
             };
-            let opener = browser.identifier();
-            POPUPS.with_borrow_mut(|popups| popups.forget(&opener));
             let remaining = BROWSERS.with_borrow_mut(|browsers| {
                 browsers.retain(|open| open.is_same(Some(&mut browser.clone())) == 0);
                 browsers.len()
