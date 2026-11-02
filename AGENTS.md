@@ -9,6 +9,7 @@ mini-browser is a minimal, dark, chrome-less Chromium browser for screen sharing
 ## Invariants: never break these
 
 1. **The Chromium sandbox stays on** (`sandbox` feature, `no_sandbox = 0`). Never add `--no-sandbox`, `--disable-web-security`, a remote debugging port, or similar flags.
+   User-supplied switches stay disabled (`command_line_args_disabled = 1`); read app options such as `--url` before `cef::initialize`, which clears the global command line.
 2. **The address box and `--url` only load `http(s)`.** Every other scheme becomes a search (`mini_core::address::resolve_input`).
 3. **The profile stays isolated** in the app data directory; no fallback to shared temporary folders.
 4. **No permanent browser chrome.** New UI is opt-in (shortcut or setting) and dark.
