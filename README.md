@@ -53,6 +53,7 @@ Drag the dark frame to move the window. Type a website (`github.com`) or any wor
 
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
 - **The tab list fits the window.** Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab.
+- **Starting it again brings the open window to the front** instead of opening a second one. Started with an address (`--url=github.com`), it also opens that address in a new tab.
 
 ## Good to know
 
@@ -115,7 +116,7 @@ The first build downloads CEF (about 400 MB) into `target/`. To reuse one copy a
 | macOS | `open target/bundle/minibrowser.app` |
 | Linux | `target/bundle/minibrowser` |
 
-Start on a page with `minibrowser --url=<input>`; the value goes through the same resolution as the address box.
+Start on a page with `minibrowser --url=<input>` (or `--url <input>`); the value goes through the same resolution as the address box (`mini_core::launch::url_input`). Launching again while the app runs is handled in `on_already_running_app_relaunch`: CEF forwards the new launch's command line, already cleared of user switches, to the running process; the app re-adds its own `--url` input in `on_before_command_line_processing` so it survives, and the running process only reads that input, opens it in a new tab when it resolves (`mini_core::launch::relaunch`) and brings the window to the front; the second process exits with code 0.
 
 ### Platform status
 
@@ -156,7 +157,7 @@ The same directory holds the browser profile (`profile/`). If no app data direct
 
 - **Sandbox on** on every platform. On Windows the bundle runs through CEF's `bootstrap.exe`, which hosts the app's DLL so renderer, GPU and utility processes start sandboxed.
 - **Isolated profile** in the app data directory.
-- **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
+- **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect, also when it is a second launch handed to the running app. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
 - **Pop-up throttle:** pop-ups become tabs, at most 3 per window every 2 seconds, shared by all pages so a chain of pop-ups cannot reset it (`mini_core::popups::PopupThrottle` with one key); extra ones are cancelled and logged to stderr.
 - **No permission prompts:** tabs use CEF's Alloy runtime style (CEF allows one Chrome-style browser per window), which has no permission UI, and no permission handler is registered, so camera, microphone, location and similar requests are not granted.
 
