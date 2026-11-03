@@ -22,8 +22,8 @@ PR #8 (Dependabot, actions majors) was reviewed and merged first (9c1a52e) so th
 - [x] T3c — S4 (D9): a second launch must not open a Chrome-style window — worker — commit: 22cb018 (core `launch` 9 tests RED→GREEN; second launch with no args / `--url https://example.org` / `--url javascript:alert(1)` / `--no-sandbox --url …`: 1 window, title `mini-browser`, exit 0, javascript became a search)
 - [ ] T3b — S7: app icon (artwork, Windows resource, window icon, macOS bundle icon) — worker — commit: —
 - [x] T4 — S2: PR, ci-gate, merge — inline — merge: #10 as 28038fc (ci-gate SUCCESS on c0f9870), #12 as 952940c (ci-gate SUCCESS on d82a9ec after a macOS runner-capacity rerun)
-- [ ] T5 — S3: version bump + CHANGELOG + tag + release verification — inline — release: —
-- [ ] T6 — S1: tell the owner the release is ready to test — inline — —
+- [x] T5 — S3: version bump + CHANGELOG + tag + release verification — inline — release: v0.2.0 (PR #14 merged as 48b3e12, tag v0.2.0 on it; release.yml all jobs green; downloaded assets: SHA256SUMS OK, provenance attestations verified (signer release.yml@refs/tags/v0.2.0); Windows zip starts with title `mini-browser`, new exe/window icons, no `--no-sandbox` child; Linux tar in WSL: RUNPATH `$ORIGIN`, 0 missing libraries, running after 15 s)
+- [x] T6 — S1: tell the owner the release is ready to test — inline — told in chat with the release link
 
 ## Log
 
