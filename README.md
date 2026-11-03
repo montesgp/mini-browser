@@ -231,7 +231,7 @@ To cut a release:
 
 ## Contribution workflow
 
-Only the owner ([@montesgp](https://github.com/montesgp)) can merge. Everyone else forks, branches from `main`, and opens a pull request; `main` accepts changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Only the owner ([@montesgp](https://github.com/montesgp)) can merge; the owner's own coding agents merge their PRs once `ci-gate` is green. Everyone else forks, branches from `main`, and opens a pull request; `main` accepts changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
