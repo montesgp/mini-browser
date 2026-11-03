@@ -13,6 +13,7 @@ A minimal, dark, chrome-less Chromium browser for screen sharing, streaming and 
 ## What it is
 
 - **Just the page.** No toolbar, no address bar, no title bar: the website sits inside a thin dark frame, so what you share is only what matters.
+- **Tabs and window buttons when you reach for them.** Move the mouse to the top edge of the window and a thin bar slides in with your tabs and the minimize, maximize and close buttons. It hides again when the mouse leaves, or stays if you pin it.
 - **Type an address when you need one.** Press `Ctrl+L` (`Cmd+L` on Mac), type, press `Enter`. It disappears again.
 - **Separate from your browser.** Its own cookies and history, nothing from your everyday browser shows up in a meeting.
 - **Real Chromium, with its security on.** Same engine as Chrome, with Chromium's sandbox enabled.
@@ -43,18 +44,19 @@ Keep the extracted folder together: the app needs the files next to it.
 | Open a new tab | `Ctrl+T` | `Cmd+T` |
 | Close the tab (the last one closes the window) | `Ctrl+W` | `Cmd+W` |
 | Switch tabs | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Show or hide the tab list | `Ctrl+Shift+F` | `Cmd+Shift+F` |
+| Pin or unpin the top bar (tabs and window buttons) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Back / forward | `Alt+Left` / `Alt+Right` | `Cmd+[` / `Cmd+]` |
 | Reload | `Ctrl+R` | `Cmd+R` |
-| Change the frame size | `Ctrl+,` | `Cmd+,` |
+| Settings: frame size, top bar `Auto` or `Pinned` | `Ctrl+,` | `Cmd+,` |
 | Quit | `Ctrl+Q` | `Cmd+Q` |
 
-Drag the dark frame to move the window. Type a website (`github.com`) or any words to search.
+Drag the dark frame to move the window, double-click it to maximize or restore, and drag its edges to resize. Type a website (`github.com`) or any words to search.
 
 - **A new tab shows a faint hint**, `Ctrl+L to enter an address` (`Cmd+L` on Mac), until a page loads.
 - **A thin blue line moves along the top of the frame** while the page loads.
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
-- **The tab list fits the window.** Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab.
+- **The top bar shows where you are.** Click a tab to switch to it. The bar also shows for a moment when you open, close or switch tabs. Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab and how many are hidden (`+3`).
+- **`Auto` or `Pinned`.** By default (`Auto`) the bar only shows on hover, so a shared screen stays clean. `Pinned` keeps it always visible, with the page below it. Choose in settings (`Ctrl+,`) or press `Ctrl+Shift+F`; the choice is remembered. On Linux the bar is always pinned for now.
 - **Starting it again brings the open window to the front** instead of opening a second one. Started with an address (`--url=github.com`), it also opens that address in a new tab.
 
 ## Good to know
@@ -84,8 +86,8 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading and blank state), settings, shortcut table, pop-up throttle, window geometry, tab strip layout. |
-| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box, loading line, empty-tab hint. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading and blank state), settings, shortcut table, pop-up throttle, window geometry, tab strip layout, top bar visibility. |
+| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, top bar (tab strip and window buttons), settings box, loading line, empty-tab hint. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
 | `assets/icon` | The app icon: `icon.svg` is the master; `icon.ico`, `icon.icns` and the PNGs are rasters of it. |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
@@ -154,15 +156,26 @@ Implemented in `crates/core/src/address.rs`:
 ```json
 {
   "padding": 8,
-  "searchTemplate": "https://www.google.com/search?q={query}"
+  "searchTemplate": "https://www.google.com/search?q={query}",
+  "topBar": "auto"
 }
 ```
 
 - `padding`: frame width in pixels, 4 to 32 (default 8, 2 px per settings-box step). Out-of-range integers are clamped.
 - `searchTemplate`: an `http(s)` URL containing `{query}`. Anything else falls back to Google.
+- `topBar`: `"auto"` (default) or `"pinned"`. Any other value means `"auto"` and leaves the other settings intact.
 - A corrupt file yields defaults and stays untouched until a setting changes, which rewrites it atomically.
 
 The same directory holds the browser profile (`profile/`). If no app data directory can be determined, the app exits with an error (a dialog on Windows) instead of using a shared temporary folder. If saving settings fails, the settings box says so and the change applies until restart.
+
+## Top bar
+
+The top bar (`crates/app/src/shell/top_bar.rs`) is a window overlay below the frame's top side, holding the tab strip (`tab_strip.rs`) and the window buttons, which call the CEF `Window` API (`minimize`, `maximize`, `restore`, `close` through the tabs' close sequence). In `Pinned` mode a spacer of the bar's height sits in the window layout, so the page starts below the bar; in `Auto` mode there is no spacer and the hidden overlay leaves nothing on the page.
+
+- **Visibility rules** live in `mini_core::top_bar`, a time-injected state machine: the top edge (the frame's top side, at least 6 px, measured from the screen's edge when a maximized window reaches past it) reveals the bar, the bar's area keeps it while shown, it hides 0.5 s after the pointer leaves, and tab changes flash it for 1.5 s (not the first tab).
+- **Pointer:** CEF Views reports no mouse moves over a browser view, so a 100 ms timer (`post_delayed_task`) reads the cursor: `GetCursorPos` on Windows (ignored when `WindowFromPoint` finds another window on top), `NSEvent::mouseLocation` on macOS. Linux has no pointer query yet, so `Auto` behaves as `Pinned` there (TODO in `top_bar.rs`).
+- **Dragging:** the frame and the bar's empty area right of the tabs are draggable regions; tabs and buttons are not, so they get clicks. Double-click maximize and restore come from the OS caption behavior of those regions.
+- **Overflow:** `mini_core::strip::strip_layout` reserves room for the `+N` count when tabs are hidden.
 
 ## Security model
 

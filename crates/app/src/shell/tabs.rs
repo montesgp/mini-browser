@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use cef::*;
 use mini_core::tabs::{TabId, Tabs};
 
-use super::{address_box, hint, loading_line, tab_strip, window};
+use super::{address_box, hint, loading_line, tab_strip, top_bar, window};
 
 /// URL of a tab that has not navigated yet. The model stores it as an empty URL.
 const BLANK_URL: &str = "about:blank";
@@ -115,7 +115,7 @@ fn add_tab(view: BrowserView, url: Option<&str>, blank: bool) {
 }
 
 /// Makes the active tab's view the only visible one and updates the address box, strip, hint
-/// and loading line. The address box opens over a blank tab.
+/// and loading line, and flashes the top bar. The address box opens over a blank tab.
 fn show_active() {
     let Some((views, active, is_blank)) = with_shell(|shell| {
         let views: Vec<BrowserView> = shell.views.iter().map(|(_, view)| view.clone()).collect();
@@ -135,6 +135,7 @@ fn show_active() {
     hide_all_but(&views, &active);
     active.set_visible(1);
     tab_strip::refresh();
+    top_bar::tabs_changed();
     show_indicators();
     if is_blank {
         address_box::show("");

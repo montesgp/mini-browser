@@ -1,18 +1,18 @@
-//! The settings box: a small dark overlay to change the padding frame, with a thin edge in the
-//! address box's border color so it stands out on dark pages. Every change applies at once and
-//! is saved to the settings file.
+//! The settings box: a small dark overlay to change the padding frame and when the top bar
+//! shows, with a thin edge in the address box's border color so it stands out on dark pages.
+//! Every change applies at once and is saved to the settings file.
 
 use std::{cell::RefCell, path::PathBuf};
 
 use cef::*;
 use mini_core::{
     layout,
-    settings::{PADDING_MAX, PADDING_MIN, Settings},
+    settings::{PADDING_MAX, PADDING_MIN, Settings, TopBarMode},
 };
 
 use super::{
     address_box::{self, BORDER_COLOR, BOX_COLOR, TEXT_COLOR},
-    tabs,
+    tabs, top_bar,
     window::{self, DarkPanelDelegate},
 };
 
@@ -31,6 +31,9 @@ const TITLE_FONT: &str = "Segoe UI, Helvetica, Arial, Bold 15px";
 const STEP_FONT: &str = "Segoe UI, Helvetica, Arial, 20px";
 const VALUE_WIDTH: i32 = 56;
 const BUTTON_SIZE: i32 = 28;
+const MODE_WIDTH: i32 = 64;
+/// Background of the selected top bar mode.
+const SELECTED_COLOR: u32 = 0xFF38_3838;
 
 const VK_ESCAPE: i32 = 0x1B;
 
@@ -41,6 +44,8 @@ struct SettingsBox {
     minus: LabelButton,
     value: LabelButton,
     plus: LabelButton,
+    auto: LabelButton,
+    pinned: LabelButton,
     not_saved: LabelButton,
     settings: Settings,
     path: PathBuf,
@@ -66,24 +71,28 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         cross_axis_alignment: AxisAlignment::STRETCH,
         ..Default::default()
     }));
-    let Some(row) = panel_create(Some(&mut DarkPanelDelegate::new(BOX_COLOR, 0))) else {
-        return;
-    };
-    let row_layout = row.set_to_box_layout(Some(&BoxLayoutSettings {
-        horizontal: 1,
-        between_child_spacing: 6,
-        cross_axis_alignment: AxisAlignment::CENTER,
-        ..Default::default()
-    }));
-
-    let (Some(title), Some(label), Some(minus), Some(value), Some(plus), Some(not_saved)) = (
+    let (
+        Some(title),
+        Some(label),
+        Some(minus),
+        Some(value),
+        Some(plus),
+        Some(bar_label),
+        Some(auto),
+        Some(pinned),
+        Some(not_saved),
+    ) = (
         text("Settings", TITLE_FONT, TEXT_COLOR),
         text("Padding", FONT, DIM_TEXT_COLOR),
         step_button("\u{2212}", -1),
         text("", FONT, TEXT_COLOR),
         step_button("+", 1),
+        text("Top bar", FONT, DIM_TEXT_COLOR),
+        mode_button(TopBarMode::Auto),
+        mode_button(TopBarMode::Pinned),
         text(NOT_SAVED, FONT, WARNING_TEXT_COLOR),
-    ) else {
+    )
+    else {
         return;
     };
     not_saved.set_visible(0);
@@ -94,15 +103,15 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
     }));
 
     panel.add_child_view(Some(&mut View::from(&title)));
-    let mut label_view = View::from(&label);
-    row.add_child_view(Some(&mut label_view));
-    row.add_child_view(Some(&mut View::from(&minus)));
-    row.add_child_view(Some(&mut View::from(&value)));
-    row.add_child_view(Some(&mut View::from(&plus)));
-    if let Some(layout) = row_layout {
-        layout.set_flex_for_view(Some(&mut label_view), 1);
+    for (label, controls) in [
+        (&label, [&minus, &value, &plus].as_slice()),
+        (&bar_label, [&auto, &pinned].as_slice()),
+    ] {
+        let Some(row) = row(label, controls) else {
+            return;
+        };
+        panel.add_child_view(Some(&mut View::from(&row)));
     }
-    panel.add_child_view(Some(&mut View::from(&row)));
     panel.add_child_view(Some(&mut View::from(&not_saved)));
     let Some(panel) = edged(&panel) else {
         return;
@@ -120,11 +129,32 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         minus,
         value,
         plus,
+        auto,
+        pinned,
         not_saved,
         settings,
         path,
     }));
     show_padding();
+    show_top_bar();
+}
+
+/// A row with `label` on the left and `controls` on the right.
+fn row(label: &LabelButton, controls: &[&LabelButton]) -> Option<Panel> {
+    let row = panel_create(Some(&mut DarkPanelDelegate::new(BOX_COLOR, 0)))?;
+    let layout = row.set_to_box_layout(Some(&BoxLayoutSettings {
+        horizontal: 1,
+        between_child_spacing: 6,
+        cross_axis_alignment: AxisAlignment::CENTER,
+        ..Default::default()
+    }))?;
+    let mut label_view = View::from(label);
+    row.add_child_view(Some(&mut label_view));
+    for control in controls {
+        row.add_child_view(Some(&mut View::from(*control)));
+    }
+    layout.set_flex_for_view(Some(&mut label_view), 1);
+    Some(row)
 }
 
 pub fn destroy() {
@@ -152,7 +182,7 @@ fn edged(content: &Panel) -> Option<Panel> {
 /// label button.
 fn text(text: &str, font: &str, color: u32) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(0)),
+        Some(&mut SettingsButtonDelegate::new(Choice::None)),
         Some(&CefString::from(text)),
     )?;
     button.set_font_list(Some(&CefString::from(font)));
@@ -166,7 +196,7 @@ fn text(text: &str, font: &str, color: u32) -> Option<LabelButton> {
 /// A `−` or `+` button that moves the padding by `steps`.
 fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(steps)),
+        Some(&mut SettingsButtonDelegate::new(Choice::Padding(steps))),
         Some(&CefString::from(label)),
     )?;
     button.set_font_list(Some(&CefString::from(STEP_FONT)));
@@ -185,6 +215,61 @@ fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
         "Increase padding"
     })));
     Some(button)
+}
+
+/// An `Auto` or `Pinned` button that sets when the top bar shows.
+fn mode_button(mode: TopBarMode) -> Option<LabelButton> {
+    let button = label_button_create(
+        Some(&mut SettingsButtonDelegate::new(Choice::TopBar(mode))),
+        Some(&CefString::from(mode_name(mode))),
+    )?;
+    button.set_font_list(Some(&CefString::from(FONT)));
+    button.set_horizontal_alignment(HorizontalAlignment::CENTER);
+    let size = Size {
+        width: MODE_WIDTH,
+        height: BUTTON_SIZE,
+    };
+    button.set_minimum_size(Some(&size));
+    button.set_maximum_size(Some(&size));
+    button.set_focusable(1);
+    Some(button)
+}
+
+fn mode_name(mode: TopBarMode) -> &'static str {
+    match mode {
+        TopBarMode::Auto => "Auto",
+        TopBarMode::Pinned => "Pinned",
+    }
+}
+
+/// Highlights the button of the current top bar mode.
+fn show_top_bar() {
+    let Some((mode, buttons)) = SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box.as_ref().map(|settings_box| {
+            (
+                settings_box.settings.top_bar,
+                [
+                    (TopBarMode::Auto, settings_box.auto.clone()),
+                    (TopBarMode::Pinned, settings_box.pinned.clone()),
+                ],
+            )
+        })
+    }) else {
+        return;
+    };
+    for (button_mode, button) in buttons {
+        let selected = button_mode == mode;
+        let (background, text_color) = if selected {
+            (SELECTED_COLOR, TEXT_COLOR)
+        } else {
+            (BOX_COLOR, DIM_TEXT_COLOR)
+        };
+        button.set_background_color(background);
+        button.set_enabled_text_colors(text_color);
+        let state = if selected { "selected" } else { "not selected" };
+        let name = format!("Top bar: {} ({state})", mode_name(button_mode));
+        button.set_accessible_name(Some(&CefString::from(name.as_str())));
+    }
 }
 
 /// Shows the current padding and dims the button whose direction is at its bound. The button
@@ -227,13 +312,49 @@ fn show_padding() {
     panel.layout();
 }
 
-/// Moves the padding by `steps`, applies it to the window and saves it. A failed save is
-/// reported, shown in the box until a later save succeeds, and the new padding still applies
-/// for this run.
+/// Moves the padding by `steps`, applies it to the window and saves it.
 fn step(steps: i32) {
-    let Some((settings, path, not_saved)) = SETTINGS_BOX.with_borrow_mut(|settings_box| {
+    let Some(settings) = change(|settings| settings.with_padding_steps(steps)) else {
+        return;
+    };
+    window::set_padding(settings.padding);
+    show_padding();
+    // The warning line changes the box's height.
+    reposition();
+}
+
+/// Sets when the top bar shows, applies it and saves it.
+fn set_top_bar(mode: TopBarMode) {
+    let Some(settings) = change(|settings| Settings {
+        top_bar: mode,
+        ..settings.clone()
+    }) else {
+        return;
+    };
+    top_bar::set_mode(settings.top_bar);
+    show_top_bar();
+    reposition();
+}
+
+/// Switches the top bar between auto and pinned and saves it (`Ctrl/Cmd+Shift+F`).
+pub fn toggle_top_bar() {
+    let mode = SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box
+            .as_ref()
+            .map(|settings_box| settings_box.settings.top_bar)
+    });
+    if let Some(mode) = mode {
+        set_top_bar(mode.toggled());
+    }
+}
+
+/// Replaces the settings with `new` of them and saves them; returns the new settings, or `None`
+/// when nothing changed. A failed save is reported, shown in the box until a later save
+/// succeeds, and the change still applies for this run.
+fn change(new: impl FnOnce(&Settings) -> Settings) -> Option<Settings> {
+    let (settings, path, not_saved) = SETTINGS_BOX.with_borrow_mut(|settings_box| {
         let settings_box = settings_box.as_mut()?;
-        let settings = settings_box.settings.with_padding_steps(steps);
+        let settings = new(&settings_box.settings);
         if settings == settings_box.settings {
             return None;
         }
@@ -243,9 +364,7 @@ fn step(steps: i32) {
             settings_box.path.clone(),
             settings_box.not_saved.clone(),
         ))
-    }) else {
-        return;
-    };
+    })?;
     let saved = settings.save(&path);
     if let Err(error) = &saved {
         eprintln!(
@@ -254,10 +373,7 @@ fn step(steps: i32) {
         );
     }
     not_saved.set_visible(saved.is_err().into());
-    window::set_padding(settings.padding);
-    show_padding();
-    // The warning line changes the box's height.
-    reposition();
+    Some(settings)
 }
 
 fn is_visible() -> bool {
@@ -287,6 +403,8 @@ pub fn toggle() {
         return;
     };
     address_box::hide();
+    // Theme changes reset button backgrounds, so show the selected mode again.
+    show_top_bar();
     reposition();
     controller.set_visible(1);
     // Focus a button, so the window gets `Esc` and the shortcuts.
@@ -346,18 +464,30 @@ pub fn reposition() {
     controller.set_bounds(Some(&window::cef_rect(bounds)));
 }
 
-// `steps` is the padding change of a `−` / `+` button, or 0 for a line of text.
+/// What a settings box button changes.
+#[derive(Clone, Copy)]
+enum Choice {
+    /// A line of text.
+    None,
+    /// The padding change of a `−` / `+` button.
+    Padding(i32),
+    /// The top bar mode of an `Auto` / `Pinned` button.
+    TopBar(TopBarMode),
+}
+
 wrap_button_delegate! {
     struct SettingsButtonDelegate {
-        steps: i32,
+        choice: Choice,
     }
 
     impl ViewDelegate {}
 
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
-            if self.steps != 0 {
-                step(self.steps);
+            match self.choice {
+                Choice::None => {}
+                Choice::Padding(steps) => step(steps),
+                Choice::TopBar(mode) => set_top_bar(mode),
             }
         }
     }

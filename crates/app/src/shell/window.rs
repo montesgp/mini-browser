@@ -1,6 +1,6 @@
 //! The frameless, dark top-level window: a dark padding frame that drags the window (its top
-//! side holds the loading line), the tab strip on top, the tabs' browser views below and the
-//! hint and the address and settings boxes as overlays. Window and browser view delegates are
+//! side holds the loading line), the tabs' browser views inside it, and as overlays the top bar
+//! (tabs and window buttons), the hint and the address and settings boxes. Window and browser view delegates are
 //! derived from the cef-rs
 //! `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
@@ -9,7 +9,7 @@ use std::{cell::RefCell, path::PathBuf};
 use cef::{sys::cef_color_id_t, *};
 use mini_core::{layout, settings::Settings};
 
-use super::{address_box, commands, hint, loading_line, settings_box, tab_strip, tabs};
+use super::{address_box, commands, hint, loading_line, settings_box, tab_strip, tabs, top_bar};
 
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
@@ -63,6 +63,11 @@ pub fn bring_to_front() {
     window.bring_to_top();
 }
 
+/// The width of the padding frame.
+pub fn padding() -> u32 {
+    FRAME.with_borrow(|frame| frame.as_ref().map_or(0, |frame| frame.padding))
+}
+
 /// Changes the width of the padding frame and lays the window out again.
 pub fn set_padding(padding: u32) {
     let Some((window, mut content)) = FRAME.with_borrow_mut(|frame| {
@@ -86,8 +91,8 @@ fn apply_layout(window: &Window, content: &mut View, padding: u32) {
     }
 }
 
-/// Makes the padding frame, and the tab strip outside its labels, drag the window. Call it
-/// whenever the window size, the padding or the tab strip changes.
+/// Makes the padding frame, and the shown top bar outside its tabs and buttons, drag the
+/// window. Call it whenever the window size, the padding or the top bar changes.
 pub fn update_drag_regions() {
     let Some((window, padding)) = FRAME.with_borrow(|frame| {
         frame
@@ -101,7 +106,7 @@ pub fn update_drag_regions() {
     let mut regions: Vec<DraggableRegion> = frame
         .into_iter()
         .map(cef_rect)
-        .chain(tab_strip::empty_area())
+        .chain(top_bar::empty_area())
         .map(|bounds| DraggableRegion {
             bounds,
             draggable: 1,
@@ -233,6 +238,7 @@ wrap_window_delegate! {
             address_box::reposition();
             settings_box::reposition();
             hint::reposition();
+            top_bar::reposition();
             tab_strip::fit();
             update_drag_regions();
         }
@@ -262,8 +268,10 @@ wrap_window_delegate! {
             if let Some(band) = loading_line::create(self.settings.padding) {
                 window.add_child_view(Some(&mut View::from(&band)));
             }
-            if let Some(strip) = tab_strip::create() {
-                window.add_child_view(Some(&mut View::from(&strip)));
+            // The bar is the first overlay, so the others stay above it; its spacer holds the
+            // page below the pinned bar.
+            if let Some(spacer) = top_bar::create(window, self.settings.top_bar) {
+                window.add_child_view(Some(&mut View::from(&spacer)));
             }
             let mut container_view = View::from(&container);
             window.add_child_view(Some(&mut container_view));
@@ -288,6 +296,7 @@ wrap_window_delegate! {
             tabs::detach();
             address_box::destroy();
             settings_box::destroy();
+            top_bar::destroy();
             tab_strip::destroy();
             hint::destroy();
             loading_line::destroy();
