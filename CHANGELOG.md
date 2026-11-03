@@ -8,6 +8,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 - A thin animated line in the top of the frame while the current tab loads. It hides when the page has loaded or when you switch to a tab that is not loading.
 - New tabs show a faint centered hint, `Ctrl+L to enter an address` (`Cmd+L` on macOS), until a page loads.
+- An app icon: a dark frame around a window. It shows on the Windows executable, the window and the taskbar, and on the macOS app.
 
 ### Fixed
 
