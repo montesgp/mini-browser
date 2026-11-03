@@ -12,9 +12,9 @@ Make open tabs and window management discoverable without breaking the chrome-le
 
 ## Tasks
 
-- [ ] T1 — S1, S2, S3, S4: top bar with window buttons, hover reveal, pin setting, orientation flash, hidden-tab count, double-click maximize (tests for core logic, Windows functional checks) — worker — commit: —
-- [ ] T2 — S5: AGENTS.md and README policy wording — inline — commit: —
-- [ ] T3 — S1–S4: independent verify on Windows (no UI tests) — verify — evidence: —
+- [x] T1 — S1, S2, S3, S4: top bar with window buttons, hover reveal, pin setting, orientation flash, hidden-tab count, double-click maximize (tests for core logic, Windows functional checks) — worker — commits: 412e0ba (core, 18 tests RED→GREEN, 111 total), 7d656b8 (app), Linux auto fix (D1)
+- [x] T2 — S5: AGENTS.md and README policy wording — inline — commit: 8405644 (+ CONTRIBUTING wording in the D1 fix commit)
+- [x] T3 — S1–S4: independent verify on Windows (no UI tests) — verify — evidence: L6
 - [ ] T4 — PR(s), ci-gate, merge — inline — merge: —
 
 ## Log
@@ -23,3 +23,5 @@ Make open tabs and window management discoverable without breaking the chrome-le
 - L2 (discussion): a permanent bar conflicts with invariant 4 ("No permanent browser chrome") and the screen-sharing purpose; the discoverability problem is real (tabs hidden behind `Ctrl+Shift+F`, window actions only via OS shortcuts). Proposed a hover-revealed bar.
 - L3 (user decision): "Al pasar el mouse + opción de fijarla".
 - L4 (pending items folded in): hidden-tab indicator (S3) and the AGENTS.md merge wording (S5) from the v0.2.0 report.
+- L5 (delivery): the change is ~1,150 lines; it lands as two chained PRs: core logic (412e0ba, ~420 lines) and the app bar with settings row, shortcut and docs (~870 lines). A further split of the app part would need a temporary Ctrl+Shift+F path that the settings change then replaces, so it stays one behavior in one PR. Full tree was backed up on local branch `wip/topbar-full` (03c15b6).
+- L6 (evidence, independent verify on Windows, HEAD 8405644): S1 PASS (minimize IsIconic, maximize/restore IsZoomed + glyph, close), S2 PASS on Windows (hidden at start, page not covered, hover shows, hides after ~0.5 s, covered top edge does not reveal, settings row by keyboard, Ctrl+Shift+F saves, pinned survives restart, `{"padding":12}` and unknown `topBar` load as Auto with padding kept), S3 PASS (1.5 s flash on Ctrl+T/Ctrl+Tab/Ctrl+W/popup, `+5` with 10 tabs at 600 px, active visible), S4 PASS (double-click frame/bar maximize-restore, drag moves, tab drag does not), regressions PASS. FAIL D1: Linux forced Pinned, a permanent bar by default (invariant 4); fixed so Linux Auto stays hidden and flashes on tab changes (pointer query is a TODO). Advisory: macOS does not check for a covering window; the timer also runs when pinned. Input-safety slip reported by the verifier: one click may have landed outside the app while a human used the mouse, and the left button stayed down ~10 s before release; the helper was fixed and the run repeated.
