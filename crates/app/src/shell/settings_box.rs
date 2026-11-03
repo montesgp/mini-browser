@@ -4,7 +4,10 @@
 use std::{cell::RefCell, path::PathBuf};
 
 use cef::*;
-use mini_core::settings::{PADDING_MAX, PADDING_MIN, Settings};
+use mini_core::{
+    layout,
+    settings::{PADDING_MAX, PADDING_MIN, Settings},
+};
 
 use super::{
     address_box::{self, BOX_COLOR, TEXT_COLOR},
@@ -16,6 +19,9 @@ const WIDTH: i32 = 280;
 const INSET: i32 = 14;
 const DIM_TEXT_COLOR: u32 = 0xFF8C_8C8C;
 const DISABLED_BUTTON_COLOR: u32 = 0xFF4A_4A4A;
+const WARNING_TEXT_COLOR: u32 = 0xFFD8_A657;
+/// Shown while the last change could not be saved to the settings file.
+const NOT_SAVED: &str = "Not saved: applies until restart";
 const FONT: &str = "Segoe UI, Helvetica, Arial, 14px";
 const TITLE_FONT: &str = "Segoe UI, Helvetica, Arial, Bold 15px";
 const VALUE_WIDTH: i32 = 56;
@@ -30,6 +36,7 @@ struct SettingsBox {
     minus: LabelButton,
     value: LabelButton,
     plus: LabelButton,
+    not_saved: LabelButton,
     settings: Settings,
     path: PathBuf,
 }
@@ -64,15 +71,17 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         ..Default::default()
     }));
 
-    let (Some(title), Some(label), Some(minus), Some(value), Some(plus)) = (
+    let (Some(title), Some(label), Some(minus), Some(value), Some(plus), Some(not_saved)) = (
         text("Settings", TITLE_FONT, TEXT_COLOR),
         text("Padding", FONT, DIM_TEXT_COLOR),
         step_button("\u{2212}", -1),
         text("", FONT, TEXT_COLOR),
         step_button("+", 1),
+        text(NOT_SAVED, FONT, WARNING_TEXT_COLOR),
     ) else {
         return;
     };
+    not_saved.set_visible(0);
     value.set_horizontal_alignment(HorizontalAlignment::CENTER);
     value.set_minimum_size(Some(&Size {
         width: VALUE_WIDTH,
@@ -89,6 +98,7 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         layout.set_flex_for_view(Some(&mut label_view), 1);
     }
     panel.add_child_view(Some(&mut View::from(&row)));
+    panel.add_child_view(Some(&mut View::from(&not_saved)));
 
     let Some(controller) =
         window.add_overlay_view(Some(&mut View::from(&panel)), DockingMode::CUSTOM, 1)
@@ -102,6 +112,7 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         minus,
         value,
         plus,
+        not_saved,
         settings,
         path,
     }));
@@ -174,27 +185,36 @@ fn show_padding() {
 }
 
 /// Moves the padding by `steps`, applies it to the window and saves it. A failed save is
-/// reported and the new padding still applies for this run.
+/// reported, shown in the box until a later save succeeds, and the new padding still applies
+/// for this run.
 fn step(steps: i32) {
-    let Some((settings, path)) = SETTINGS_BOX.with_borrow_mut(|settings_box| {
+    let Some((settings, path, not_saved)) = SETTINGS_BOX.with_borrow_mut(|settings_box| {
         let settings_box = settings_box.as_mut()?;
         let settings = settings_box.settings.with_padding_steps(steps);
         if settings == settings_box.settings {
             return None;
         }
         settings_box.settings = settings.clone();
-        Some((settings, settings_box.path.clone()))
+        Some((
+            settings,
+            settings_box.path.clone(),
+            settings_box.not_saved.clone(),
+        ))
     }) else {
         return;
     };
-    if let Err(error) = settings.save(&path) {
+    let saved = settings.save(&path);
+    if let Err(error) = &saved {
         eprintln!(
             "minibrowser: cannot save settings to {}: {error}",
             path.display()
         );
     }
+    not_saved.set_visible(saved.is_err().into());
     window::set_padding(settings.padding);
     show_padding();
+    // The warning line changes the box's height.
+    reposition();
 }
 
 fn is_visible() -> bool {
@@ -230,16 +250,24 @@ pub fn toggle() {
     target.request_focus();
 }
 
+/// Closes the box and gives the keyboard focus back to the page.
 fn hide() {
+    if close() {
+        tabs::focus_active_page();
+    }
+}
+
+/// Closes the box without moving the focus. Returns whether the box exists.
+pub fn close() -> bool {
     let controller = SETTINGS_BOX.with_borrow(|settings_box| {
         settings_box
             .as_ref()
             .map(|settings_box| settings_box.controller.clone())
     });
-    if let Some(controller) = controller {
+    if let Some(controller) = &controller {
         controller.set_visible(0);
-        tabs::focus_active_page();
     }
+    controller.is_some()
 }
 
 /// Closes the open box on `Esc`. Returns whether the event was used.
@@ -269,13 +297,9 @@ pub fn reposition() {
         return;
     };
     let size = window.size();
-    let width = WIDTH.min(size.width).max(1);
-    controller.set_bounds(Some(&Rect {
-        x: (size.width - width) / 2,
-        y: size.height / 5,
-        width,
-        height: panel.preferred_size().height,
-    }));
+    let height = panel.preferred_size().height;
+    let bounds = layout::floating_box(size.width, size.height, WIDTH, 0, height);
+    controller.set_bounds(Some(&window::cef_rect(bounds)));
 }
 
 // `steps` is the padding change of a `−` / `+` button, or 0 for a line of text.

@@ -73,6 +73,20 @@ jobs:
           readelf -d target/bundle/minibrowser | grep -E 'RUNPATH|RPATH'
           if ldd target/bundle/minibrowser | grep 'not found'; then exit 1; fi
 
+      # Launch the real app: it must stay up with its helper processes (and, on Linux, with
+      # Chromium's sandbox active). Screenshots and logs are kept as artifacts.
+      - name: Smoke test
+        shell: bash
+        run: .github/scripts/smoke-test.sh target/bundle smoke
+
+      - name: Upload smoke test output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-${{ matrix.os }}
+          path: smoke/
+          if-no-files-found: ignore
+
   # Single required check for branch protection: green only when every build passed.
   ci-gate:
     if: always()

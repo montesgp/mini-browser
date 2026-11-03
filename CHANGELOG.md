@@ -7,11 +7,22 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 ### Fixed
 
 - Linux: the app now starts. The v0.1.0 Linux build could not find `libcef.so` next to the executable; it is now linked with an `$ORIGIN` runpath, and CI fails if the bundle cannot resolve its libraries.
+- Windows: when the app data directory cannot be found, an error dialog says so; before, the app quit without a visible message.
+- The settings box shows "Not saved" when the settings file cannot be written, until a later change saves.
+- Switching tabs with `Ctrl+Tab` no longer outlines the first link of the page.
+- The address box and the settings box no longer stack: opening one closes the other.
+- The tab strip always has its intended 28 px height, whatever the height of its labels.
+
+### Security
+
+- Pages can open at most 3 popups (which become tabs) within 2 seconds, shared across the window so a chain of popups cannot reset the count; further popups are blocked. Tabs you open with `Ctrl/Cmd+T` are not limited.
+- Chromium and CEF command-line switches such as `--no-sandbox`, `--disable-web-security` or `--remote-debugging-port` are ignored; `--url` still works.
 
 ### Changed
 
 - Linux release archive is much smaller (about 158 MB instead of 373 MB): debug symbols are stripped from `libcef.so` and the app binary.
 - CI actions are pinned to commit SHAs and kept current by Dependabot.
+- CI now launches the real app on Windows, macOS and Linux (smoke test with screenshots); on Linux it also checks that Chromium's sandbox is active.
 
 ## [0.1.0] - 2026-10-31
 

@@ -1,15 +1,25 @@
 //! Browser-level callbacks and the list of open browsers. All of it runs on the CEF UI thread,
 //! so the list lives in thread-local storage.
 
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    time::{Duration, Instant},
+};
 
 use cef::*;
+use mini_core::popups::PopupThrottle;
 
 use super::{commands, tabs, window};
 
 thread_local! {
     static BROWSERS: RefCell<Vec<Browser>> = const { RefCell::new(Vec::new()) };
     static CLOSING: Cell<bool> = const { Cell::new(false) };
+    /// Popups opened recently in the window. One shared budget (unit key) rather than one per
+    /// opener, so a popup that opens another popup cannot reset the count.
+    static POPUPS: RefCell<PopupThrottle<()>> = RefCell::new(PopupThrottle::default());
+    /// At most one "popup blocked" message every 10 seconds, so a page cannot flood stderr.
+    static BLOCKED_LOG: RefCell<PopupThrottle<()>> =
+        RefCell::new(PopupThrottle::new(1, Duration::from_secs(10)));
 }
 
 wrap_client! {
@@ -124,6 +134,34 @@ wrap_life_span_handler! {
     struct MiniLifeSpanHandler;
 
     impl LifeSpanHandler {
+        fn on_before_popup(
+            &self,
+            browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _popup_id: i32,
+            _target_url: Option<&CefString>,
+            _target_frame_name: Option<&CefString>,
+            _target_disposition: WindowOpenDisposition,
+            _user_gesture: i32,
+            _popup_features: Option<&PopupFeatures>,
+            _window_info: Option<&mut WindowInfo>,
+            _client: Option<&mut Option<Client>>,
+            _settings: Option<&mut BrowserSettings>,
+            _extra_info: Option<&mut Option<DictionaryValue>>,
+            _no_javascript_access: Option<&mut i32>,
+        ) -> i32 {
+            // Popups become tabs, so the window only accepts a few at a time; cancel the rest.
+            if browser.is_none() {
+                return 0;
+            }
+            let now = Instant::now();
+            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow((), now));
+            if !allowed && BLOCKED_LOG.with_borrow_mut(|log| log.allow((), now)) {
+                eprintln!("minibrowser: blocking popups (more than 3 within 2 seconds)");
+            }
+            (!allowed).into()
+        }
+
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
             if let Some(browser) = browser {

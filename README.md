@@ -54,6 +54,7 @@ Drag the dark frame to move the window. Type a website (`github.com`) or any wor
 ## Good to know
 
 - **Camera, microphone and location requests are not granted.** It is made for showing pages, not for joining calls; use your main browser for those.
+- **Pop-ups open as tabs, a few at a time.** Pages can open at most 3 pop-up tabs every 2 seconds in total, so nothing can flood your window.
 - **No downloads, printing or find-in-page** yet.
 - **Keep it updated.** Each release ships a recent Chromium; newer releases carry its security fixes.
 
@@ -77,7 +78,7 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table, pop-up throttle, window geometry. |
 | `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
@@ -115,7 +116,7 @@ Start on a page with `minibrowser --url=<input>`; the value goes through the sam
 
 ### Platform status
 
-Windows is built, tested and exercised by hand. macOS (Apple Silicon) and Linux (x64) compile, pass tests and are bundled by CI and the release workflow, but nobody has launched those builds by hand yet. Windows ARM64, Linux ARM64 and Intel Macs are supported by cef-rs but not built.
+Windows is built, tested and exercised by hand. Linux (x64) was run by hand in WSL2 with WSLg (Ubuntu 26.04): it renders, and its renderers run inside Chromium's namespace and seccomp sandbox. macOS (Apple Silicon) compiles, passes tests and is bundled, but nobody has used it by hand yet. CI launches the real app on all three systems (`.github/scripts/smoke-test.sh`): it must stay up with its helper processes, and on Linux with seccomp-sandboxed children. Windows ARM64, Linux ARM64 and Intel Macs are supported by cef-rs but not built.
 
 ## Address resolution
 
@@ -146,13 +147,14 @@ Implemented in `crates/core/src/address.rs`:
 - `searchTemplate`: an `http(s)` URL containing `{query}`. Anything else falls back to Google.
 - A corrupt file yields defaults and stays untouched until a setting changes, which rewrites it atomically.
 
-The same directory holds the browser profile (`profile/`). If no app data directory can be determined, the app exits with an error instead of using a shared temporary folder.
+The same directory holds the browser profile (`profile/`). If no app data directory can be determined, the app exits with an error (a dialog on Windows) instead of using a shared temporary folder. If saving settings fails, the settings box says so and the change applies until restart.
 
 ## Security model
 
 - **Sandbox on** on every platform. On Windows the bundle runs through CEF's `bootstrap.exe`, which hosts the app's DLL so renderer, GPU and utility processes start sandboxed.
 - **Isolated profile** in the app data directory.
-- **No debugging backdoors:** no remote debugging port, no flag that weakens web security.
+- **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
+- **Pop-up throttle:** pop-ups become tabs, at most 3 per window every 2 seconds, shared by all pages so a chain of pop-ups cannot reset it (`mini_core::popups::PopupThrottle` with one key); extra ones are cancelled and logged to stderr.
 - **No permission prompts:** tabs use CEF's Alloy runtime style (CEF allows one Chrome-style browser per window), which has no permission UI, and no permission handler is registered, so camera, microphone, location and similar requests are not granted.
 
 Trade-offs:

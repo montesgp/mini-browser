@@ -133,6 +133,11 @@ fn show_active() {
     let Some(active) = active else {
         return;
     };
+    // Hide the other views before the focus moves. The focus moves asynchronously, so the
+    // previous page still has it here; hiding it while the new page is visible makes Views
+    // move the focus to the new page as if Tab was pressed, which focuses (and outlines) its
+    // first link. With no other page visible the focus is simply dropped.
+    hide_all_but(&views, &active);
     active.set_visible(1);
     tab_strip::refresh();
     if is_blank {
@@ -141,10 +146,11 @@ fn show_active() {
         address_box::hide();
         active.request_focus();
     }
-    // Hide the other views only after the focus has moved: hiding the focused view makes
-    // Views move the focus as if Tab was pressed, which focuses the first link of the page.
-    for view in &views {
-        if view.is_same(Some(&mut View::from(&active))) == 0 {
+}
+
+fn hide_all_but(views: &[BrowserView], shown: &BrowserView) {
+    for view in views {
+        if view.is_same(Some(&mut View::from(shown))) == 0 {
             view.set_visible(0);
         }
     }
@@ -209,6 +215,8 @@ pub fn close_tab_for(browser: &Browser) -> bool {
     let Some((container, view)) = removed else {
         return false;
     };
+    // Hide the closing page at once (see `show_active` for the order); removing it waits.
+    view.set_visible(0);
     // Tear the view down after CEF returns from `do_close`.
     let mut task = RemoveView::new(container, view);
     post_task(ThreadId::UI, Some(&mut task));
@@ -286,15 +294,17 @@ pub fn set_url(browser: &Browser, url: &str) {
     update(browser, |tabs, id| tabs.set_url(id, page_text(url)));
 }
 
+/// Applies `f` to the tab of `browser` and shows the tab's new title in the strip.
 fn update(browser: &Browser, f: impl FnOnce(&mut Tabs, TabId)) {
     let updated = with_shell(|shell| {
         let id = shell.tab_for(browser)?;
         f(&mut shell.tabs, id);
-        Some(())
+        let title = shell.tabs.get(id)?.display_title().to_owned();
+        Some((id, title))
     })
     .flatten();
-    if updated.is_some() {
-        tab_strip::refresh();
+    if let Some((id, title)) = updated {
+        tab_strip::retitle(id, &title);
     }
 }
 
