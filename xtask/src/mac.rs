@@ -1,7 +1,7 @@
 // Derived from the cef-rs `bundle-cef-app` tool (https://github.com/tauri-apps/cef-rs),
 // licensed Apache-2.0 OR MIT.
 
-use std::{env, path::PathBuf, process::Command};
+use std::{env, fs, path::Path, path::PathBuf, process::Command};
 
 use anyhow::{Context, bail};
 use cef::build_util::{
@@ -10,6 +10,9 @@ use cef::build_util::{
 };
 use clap::Parser;
 use semver::Version;
+
+/// The app icon; see `assets/icon/icon.svg`.
+const ICON: &[u8] = include_bytes!("../../assets/icon/icon.icns");
 
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
@@ -52,6 +55,7 @@ pub fn main() -> anyhow::Result<()> {
     } else {
         build_bundle(&output, &args.name, bundle_info)?
     };
+    set_icon(&bundle_path)?;
     println!("Run the app from {}", bundle_path.display());
     Ok(())
 }
@@ -77,6 +81,21 @@ fn build_release_bundle(
         bundle_metadata.resources_path,
         bundle_info,
     )?)
+}
+
+/// Copies the app icon into the `.app` and names it in `Info.plist` (`CFBundleIconFile`).
+fn set_icon(app: &Path) -> anyhow::Result<()> {
+    let contents = app.join("Contents");
+    fs::write(contents.join("Resources").join("icon.icns"), ICON)?;
+    let status = Command::new("plutil")
+        .args(["-replace", "CFBundleIconFile", "-string", "icon.icns"])
+        .arg(contents.join("Info.plist"))
+        .status()
+        .context("failed to run plutil")?;
+    if !status.success() {
+        bail!("plutil could not set CFBundleIconFile: {status}");
+    }
+    Ok(())
 }
 
 fn cargo_build_release(bin: &str) -> anyhow::Result<()> {

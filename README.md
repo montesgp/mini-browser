@@ -51,6 +51,8 @@ Keep the extracted folder together: the app needs the files next to it.
 
 Drag the dark frame to move the window. Type a website (`github.com`) or any words to search.
 
+- **A new tab shows a faint hint**, `Ctrl+L to enter an address` (`Cmd+L` on Mac), until a page loads.
+- **A thin blue line moves along the top of the frame** while the page loads.
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
 - **The tab list fits the window.** Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab.
 - **Starting it again brings the open window to the front** instead of opening a second one. Started with an address (`--url=github.com`), it also opens that address in a new tab.
@@ -82,9 +84,10 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table, pop-up throttle, window geometry, tab strip layout. |
-| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading and blank state), settings, shortcut table, pop-up throttle, window geometry, tab strip layout. |
+| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box, loading line, empty-tab hint. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
+| `assets/icon` | The app icon: `icon.svg` is the master; `icon.ico`, `icon.icns` and the PNGs are rasters of it. |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
 | `.github/workflows/release.yml` | Tag-triggered release pipeline. |
 | `odd/tasks/` | Feature specs and decision logs from development. |
@@ -117,6 +120,14 @@ The first build downloads CEF (about 400 MB) into `target/`. To reuse one copy a
 | Linux | `target/bundle/minibrowser` |
 
 Start on a page with `minibrowser --url=<input>` (or `--url <input>`); the value goes through the same resolution as the address box (`mini_core::launch::url_input`). Launching again while the app runs is handled in `on_already_running_app_relaunch`: CEF forwards the new launch's command line, already cleared of user switches, to the running process; the app re-adds its own `--url` input in `on_before_command_line_processing` so it survives, and the running process only reads that input, opens it in a new tab when it resolves (`mini_core::launch::relaunch`) and brings the window to the front; the second process exits with code 0.
+
+### App icon
+
+The icon (a dark frame around a window, with the blue loading line on top) lives in `assets/icon`. `icon.svg` is the master, and the rasters are committed next to it: regenerate `icon.ico` (16 to 256 px), `icon.icns` (16 to 1024 px), `icon.png` (512 px), `icon-16.png` and `icon-32.png` from the SVG whenever it changes. Where each one goes:
+
+- **Window and taskbar, every OS:** `crates/app/src/shell/window.rs` embeds the PNGs and sets them as the CEF window icon (16 px, with 32 px for 2x screens) and app icon (512 px).
+- **Windows executable:** the bundle's `minibrowser.exe` is CEF's prebuilt `bootstrap.exe`, so the app's own build cannot give it an icon. `xtask` writes `icon.ico` into the copied executable's resources as the named icon group `MINIBROWSER`, which Explorer, shortcuts and pinned taskbar buttons pick before the bootstrap's generic icon.
+- **macOS app bundle:** `xtask` copies `icon.icns` to `minibrowser.app/Contents/Resources` and sets `CFBundleIconFile` in `Info.plist` with `plutil`.
 
 ### Platform status
 

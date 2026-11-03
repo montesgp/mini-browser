@@ -62,6 +62,34 @@ pub fn floating_box(
     }
 }
 
+/// Bounds of a `width` × `height` box centered in a window of `window_width` × `window_height`.
+pub fn centered_box(window_width: i32, window_height: i32, width: i32, height: i32) -> Rect {
+    Rect {
+        x: (window_width - width) / 2,
+        y: (window_height - height) / 2,
+        width,
+        height,
+    }
+}
+
+/// The visible part `(x, width)` of the loading line's moving segment in a line `width` pixels
+/// wide, `elapsed_ms` into the animation. The segment, a third of the line, sweeps from just
+/// left of the line to just right of it once every `period_ms`, then starts over.
+pub fn loading_segment(width: i32, elapsed_ms: u64, period_ms: u64) -> (i32, i32) {
+    if width <= 0 || period_ms == 0 {
+        return (0, 0);
+    }
+    let segment = i64::from(width / 3);
+    let travel = i64::from(width) + segment;
+    let progress = i64::try_from(elapsed_ms % period_ms).unwrap_or(0);
+    let period = i64::try_from(period_ms).unwrap_or(i64::MAX);
+    let start = -segment + travel * progress / period;
+    let left = start.clamp(0, i64::from(width));
+    let right = (start + segment).clamp(0, i64::from(width));
+    // Both ends lie within `0..=width`, so they fit in `i32`.
+    (left as i32, (right - left) as i32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +151,27 @@ mod tests {
     fn a_floating_box_stays_one_pixel_wide_in_tiny_windows() {
         assert_eq!(floating_box(40, 10, 640, 32, 48), rect(19, 2, 1, 48));
         assert_eq!(floating_box(0, 0, 640, 32, 48).width, 1);
+    }
+
+    #[test]
+    fn a_centered_box_sits_in_the_middle_of_the_window() {
+        assert_eq!(centered_box(1280, 800, 300, 24), rect(490, 388, 300, 24));
+        assert_eq!(centered_box(200, 100, 300, 24), rect(-50, 38, 300, 24));
+    }
+
+    #[test]
+    fn the_loading_segment_sweeps_across_the_line_and_repeats() {
+        assert_eq!(loading_segment(900, 0, 1200), (0, 0));
+        assert_eq!(loading_segment(900, 100, 1200), (0, 100));
+        assert_eq!(loading_segment(900, 300, 1200), (0, 300));
+        assert_eq!(loading_segment(900, 600, 1200), (300, 300));
+        assert_eq!(loading_segment(900, 1100, 1200), (800, 100));
+        assert_eq!(loading_segment(900, 1800, 1200), (300, 300));
+    }
+
+    #[test]
+    fn the_loading_segment_of_an_empty_line_is_empty() {
+        assert_eq!(loading_segment(0, 600, 1200), (0, 0));
+        assert_eq!(loading_segment(900, 600, 0), (0, 0));
     }
 }

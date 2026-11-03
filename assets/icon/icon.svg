@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- mini-browser: a dark frame around a window, with the loading line on top. -->
+  <!-- Frame: the app's near-black background with a thin lighter edge. -->
+  <rect x="72" y="72" width="880" height="880" rx="184" fill="#111111" stroke="#474747" stroke-width="16"/>
+  <!-- Loading line. -->
+  <rect x="192" y="192" width="384" height="64" rx="32" fill="#5B8DEF"/>
+  <!-- Window: the page area. -->
+  <rect x="192" y="320" width="640" height="512" rx="32" fill="#3A3A3A"/>
+</svg>
