@@ -74,20 +74,6 @@ thread_local! {
     static BAR: RefCell<Option<Bar>> = const { RefCell::new(None) };
 }
 
-/// Whether the platform reports the pointer position. Elsewhere the auto mode cannot reveal
-/// the bar, so it behaves as pinned.
-// TODO(linux): query the pointer (XQueryPointer through the X11 library CEF loads) without
-// adding a dependency, then enable the auto mode on Linux.
-const TRACKS_POINTER: bool = cfg!(any(target_os = "windows", target_os = "macos"));
-
-fn effective(mode: TopBarMode) -> TopBarMode {
-    if TRACKS_POINTER {
-        mode
-    } else {
-        TopBarMode::Pinned
-    }
-}
-
 /// Creates the bar as an overlay of `window` in `mode` and returns the spacer, the panel that
 /// keeps the page below the pinned bar; add it to the window's layout below the frame's top
 /// side. Call it before the other overlays, so they stay above the bar.
@@ -202,7 +188,7 @@ pub fn set_mode(mode: TopBarMode) {
 fn apply_mode() {
     let Some((window, spacer, mode)) = BAR.with_borrow(|bar| {
         bar.as_ref()
-            .map(|bar| (bar.window.clone(), bar.spacer.clone(), effective(bar.mode)))
+            .map(|bar| (bar.window.clone(), bar.spacer.clone(), bar.mode))
     }) else {
         return;
     };
@@ -286,7 +272,7 @@ fn update() {
             (
                 bar.window.clone(),
                 bar.controller.clone(),
-                effective(bar.mode),
+                bar.mode,
                 window::padding(),
             )
         })
@@ -391,6 +377,10 @@ fn pointer_on_screen(_window: &Window) -> Option<Point> {
     })
 }
 
+/// Linux reports no pointer yet, so in the auto mode the bar shows only when tabs change; the
+/// user can pin it.
+// TODO(linux): query the pointer (XQueryPointer through the X11 library CEF loads) without
+// adding a dependency.
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn pointer_on_screen(_window: &Window) -> Option<Point> {
     None

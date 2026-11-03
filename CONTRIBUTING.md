@@ -6,7 +6,7 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## How the project is run
 
-- The owner, [@montesgp](https://github.com/montesgp), reviews and merges every change. Nobody else has write access.
+- The owner, [@montesgp](https://github.com/montesgp), reviews and merges every external contribution. Nobody else has write access.
 - Everyone else contributes through **issues** and **pull requests from a fork**.
 - `main` is protected: changes land only through pull requests whose `ci-gate` check is green.
 - Workflows from forks run after the owner approves them, so your first CI run may wait for a moment.

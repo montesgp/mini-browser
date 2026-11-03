@@ -56,7 +56,7 @@ Drag the dark frame to move the window, double-click it to maximize or restore, 
 - **A thin blue line moves along the top of the frame** while the page loads.
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
 - **The top bar shows where you are.** Click a tab to switch to it. The bar also shows for a moment when you open, close or switch tabs. Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab and how many are hidden (`+3`).
-- **`Auto` or `Pinned`.** By default (`Auto`) the bar only shows on hover, so a shared screen stays clean. `Pinned` keeps it always visible, with the page below it. Choose in settings (`Ctrl+,`) or press `Ctrl+Shift+F`; the choice is remembered. On Linux the bar is always pinned for now.
+- **`Auto` or `Pinned`.** By default (`Auto`) the bar only shows on hover, so a shared screen stays clean. `Pinned` keeps it always visible, with the page below it. Choose in settings (`Ctrl+,`) or press `Ctrl+Shift+F`; the choice is remembered. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change, so pin it to reach the buttons.
 - **Starting it again brings the open window to the front** instead of opening a second one. Started with an address (`--url=github.com`), it also opens that address in a new tab.
 
 ## Good to know
@@ -173,7 +173,7 @@ The same directory holds the browser profile (`profile/`). If no app data direct
 The top bar (`crates/app/src/shell/top_bar.rs`) is a window overlay below the frame's top side, holding the tab strip (`tab_strip.rs`) and the window buttons, which call the CEF `Window` API (`minimize`, `maximize`, `restore`, `close` through the tabs' close sequence). In `Pinned` mode a spacer of the bar's height sits in the window layout, so the page starts below the bar; in `Auto` mode there is no spacer and the hidden overlay leaves nothing on the page.
 
 - **Visibility rules** live in `mini_core::top_bar`, a time-injected state machine: the top edge (the frame's top side, at least 6 px, measured from the screen's edge when a maximized window reaches past it) reveals the bar, the bar's area keeps it while shown, it hides 0.5 s after the pointer leaves, and tab changes flash it for 1.5 s (not the first tab).
-- **Pointer:** CEF Views reports no mouse moves over a browser view, so a 100 ms timer (`post_delayed_task`) reads the cursor: `GetCursorPos` on Windows (ignored when `WindowFromPoint` finds another window on top), `NSEvent::mouseLocation` on macOS. Linux has no pointer query yet, so `Auto` behaves as `Pinned` there (TODO in `top_bar.rs`).
+- **Pointer:** CEF Views reports no mouse moves over a browser view, so a 100 ms timer (`post_delayed_task`) reads the cursor: `GetCursorPos` on Windows (ignored when `WindowFromPoint` finds another window on top), `NSEvent::mouseLocation` on macOS. Linux has no pointer query yet, so in `Auto` the bar shows only on tab changes there (TODO in `top_bar.rs`); it never stays visible unless pinned.
 - **Dragging:** the frame and the bar's empty area right of the tabs are draggable regions; tabs and buttons are not, so they get clicks. Double-click maximize and restore come from the OS caption behavior of those regions.
 - **Overflow:** `mini_core::strip::strip_layout` reserves room for the `+N` count when tabs are hidden.
 
@@ -231,7 +231,7 @@ To cut a release:
 
 ## Contribution workflow
 
-Only the owner ([@montesgp](https://github.com/montesgp)) can merge; the owner's own coding agents merge their PRs once `ci-gate` is green. Everyone else forks, branches from `main`, and opens a pull request; `main` accepts changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Only the owner ([@montesgp](https://github.com/montesgp)) merges external contributions; the owner's own coding agents merge their PRs once `ci-gate` is green on the head commit. Everyone else forks, branches from `main`, and opens a pull request; `main` accepts changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
