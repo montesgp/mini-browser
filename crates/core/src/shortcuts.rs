@@ -24,7 +24,8 @@ pub enum Command {
     CloseTab,
     NextTab,
     PreviousTab,
-    ToggleTabStrip,
+    /// Switches the top bar between auto (on hover) and pinned.
+    ToggleTopBar,
     Back,
     Forward,
     Reload,
@@ -104,7 +105,7 @@ pub fn command_for(
         ((key::W, primary), Command::CloseTab),
         ((key::TAB, ctrl), Command::NextTab),
         ((key::TAB, ctrl_shift), Command::PreviousTab),
-        ((key::F, primary_shift), Command::ToggleTabStrip),
+        ((key::F, primary_shift), Command::ToggleTopBar),
         (back, Command::Back),
         (forward, Command::Forward),
         ((key::R, primary), Command::Reload),
@@ -186,9 +187,9 @@ mod tests {
     }
 
     #[test]
-    fn primary_shift_f_toggles_the_tab_strip() {
-        assert_eq!(other(key::F, CTRL_SHIFT), Some(Command::ToggleTabStrip));
-        assert_eq!(mac(key::F, CMD_SHIFT), Some(Command::ToggleTabStrip));
+    fn primary_shift_f_toggles_the_top_bar() {
+        assert_eq!(other(key::F, CTRL_SHIFT), Some(Command::ToggleTopBar));
+        assert_eq!(mac(key::F, CMD_SHIFT), Some(Command::ToggleTopBar));
     }
 
     #[test]

@@ -9,3 +9,4 @@ pub mod settings;
 pub mod shortcuts;
 pub mod strip;
 pub mod tabs;
+pub mod top_bar;

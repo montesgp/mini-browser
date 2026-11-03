@@ -23,6 +23,28 @@ pub struct Settings {
     pub padding: u32,
     /// Search URL with a `{query}` placeholder, used for address input that is not a URL.
     pub search_template: String,
+    /// When the top bar with the tabs and window buttons shows.
+    #[serde(deserialize_with = "lenient_top_bar")]
+    pub top_bar: TopBarMode,
+}
+
+/// When the top bar shows: on hover (and briefly when the tabs change), or always.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TopBarMode {
+    #[default]
+    Auto,
+    Pinned,
+}
+
+impl TopBarMode {
+    /// The other mode.
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Auto => Self::Pinned,
+            Self::Pinned => Self::Auto,
+        }
+    }
 }
 
 impl Default for Settings {
@@ -30,6 +52,7 @@ impl Default for Settings {
         Self {
             padding: PADDING_DEFAULT,
             search_template: DEFAULT_SEARCH_TEMPLATE.to_owned(),
+            top_bar: TopBarMode::Auto,
         }
     }
 }
@@ -91,8 +114,16 @@ impl Settings {
         Self {
             padding: self.padding.clamp(PADDING_MIN, PADDING_MAX),
             search_template,
+            ..self
         }
     }
+}
+
+/// Reads the top bar mode; any value other than a known mode is [`TopBarMode::Auto`], so it
+/// never makes the rest of the file count as corrupt.
+fn lenient_top_bar<'de, D: Deserializer<'de>>(deserializer: D) -> Result<TopBarMode, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(TopBarMode::deserialize(value).unwrap_or_default())
 }
 
 /// Reads any JSON integer (negative or beyond `u32`) as a padding clamped to the valid range.
@@ -144,10 +175,12 @@ mod tests {
         let settings = Settings {
             padding: 12,
             search_template: "https://duckduckgo.com/?q={query}".into(),
+            top_bar: TopBarMode::Pinned,
         };
         let json = settings.to_json();
         assert!(json.contains("\"padding\": 12"), "{json}");
         assert!(json.contains("\"searchTemplate\""), "{json}");
+        assert!(json.contains("\"topBar\": \"pinned\""), "{json}");
         assert_eq!(Settings::from_json(&json), settings);
     }
 
@@ -288,6 +321,59 @@ mod tests {
         assert_eq!(five.with_padding_steps(-1).padding, 4);
         let thirty_one = Settings::from_json(r#"{"padding":31}"#);
         assert_eq!(thirty_one.with_padding_steps(1).padding, 32);
+    }
+
+    #[test]
+    fn the_top_bar_defaults_to_auto() {
+        assert_eq!(Settings::default().top_bar, TopBarMode::Auto);
+        assert_eq!(
+            Settings::from_json(r#"{"padding":10}"#).top_bar,
+            TopBarMode::Auto
+        );
+        let json = Settings::default().to_json();
+        assert!(json.contains("\"topBar\": \"auto\""), "{json}");
+    }
+
+    #[test]
+    fn known_top_bar_modes_are_read() {
+        assert_eq!(
+            Settings::from_json(r#"{"topBar":"pinned"}"#).top_bar,
+            TopBarMode::Pinned
+        );
+        assert_eq!(
+            Settings::from_json(r#"{"topBar":"auto"}"#).top_bar,
+            TopBarMode::Auto
+        );
+    }
+
+    #[test]
+    fn an_unknown_top_bar_mode_is_auto_and_keeps_the_other_fields() {
+        for mode in [
+            r#""sticky""#,
+            r#""Pinned""#,
+            "5",
+            "null",
+            "true",
+            "[]",
+            "{}",
+        ] {
+            let json = format!(
+                r#"{{"padding":12,"searchTemplate":"https://duckduckgo.com/?q={{query}}","topBar":{mode}}}"#
+            );
+            let settings = Settings::from_json(&json);
+            assert_eq!(settings.top_bar, TopBarMode::Auto, "{mode}");
+            assert_eq!(settings.padding, 12, "{mode}");
+            assert_eq!(
+                settings.search_template, "https://duckduckgo.com/?q={query}",
+                "{mode}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_top_bar_mode_toggles() {
+        assert_eq!(TopBarMode::Auto.toggled(), TopBarMode::Pinned);
+        assert_eq!(TopBarMode::Pinned.toggled(), TopBarMode::Auto);
     }
 
     #[test]
