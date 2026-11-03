@@ -1,0 +1,32 @@
+# mini-browser UX/UI polish and next release
+
+Review the browser's look and feel, fix what is clearly off, and publish the next release so the owner can download the archive and test it end to end.
+PR #8 (Dependabot, actions majors) was reviewed and merged first (9c1a52e) so the release exercises the new release actions.
+
+## Specs
+
+- **S1 — Finish the pending items.** User: "Dale avanza en los pendientes y una vez finalicemos avisame asi hago la prueba completa, descargar el zip del repo y ejecutarlo en mi entorno local." Pending items were PR #8 (Dependabot) and the next release (version bump, CHANGELOG, tag). When everything is published, tell the owner it is ready to download and test.
+- **S2 — Good UX/UI.** User: "Ademas revisemos bien que tenga buen estilo el navegador. Es decir buena UX/UI". Audit the running app (address box, tab strip, settings box, padding frame, window behavior, focus, keyboard flow, error and empty states, first run) against the invariants in `AGENTS.md` (dark, no permanent chrome, opt-in UI). Fix clear defects and polish within the existing design; any change that is a product decision (new visible UI, changed shortcuts, changed defaults) goes to the owner first.
+- **S4 — Fix the audit defects.** Fix D1–D8 from L3 within the existing design: the tab strip fits the window (labels shrink evenly, elide by width with an ellipsis, the active tab always visible, the strip uses the app font, inactive tabs are distinguishable); settings `−`/`+` never reverse direction from the keyboard at 4/32 px; the address box and the settings box share one edge style that reads well on light and dark pages (no square slab around a rounded field); `−` and `+` look balanced.
+- **S5 — Window title.** User chose: "Fijo: \"mini-browser\" (Recomendado)". The window title is always `mini-browser`, never the page title, so a meeting's share picker shows the app name without revealing what is open.
+- **S6 — Loading indicator.** User chose: "Indicador de carga" — "Línea fina animada en el borde superior del marco mientras la página carga. Hoy no hay ninguna señal de carga." A thin animated line in the top frame while the active tab loads; hidden otherwise; dark-theme friendly.
+- **S7 — App icon.** User chose: "Ícono de la app" — "Ícono propio oscuro (lo diseño yo, simple: marco oscuro con ventana) para el .exe, la barra de tareas y macOS. Hoy usa el ícono genérico de Windows." A simple dark icon (dark frame around a window) embedded in the Windows executable and window, and in the macOS app bundle.
+- **S8 — Empty-tab hint.** User chose: "Ayuda en pestaña vacía" — "Texto tenue centrado \"Ctrl+L para escribir una dirección\" solo en pestañas vacías, para quien abre la app por primera vez." English UI copy: `Ctrl+L to enter an address` (`Cmd+L` on macOS), faint and centered, only on empty tabs.
+- **S3 — Release.** Publish the release from `main` once S2 lands: bump the workspace version, move `## [Unreleased]` in `CHANGELOG.md` to the new version, tag `vX.Y.Z`, and verify the published assets (Windows, macOS, Linux archives, `SHA256SUMS.txt`, provenance attestations) and that the Linux archive starts.
+
+## Tasks
+
+- [x] T1 — S1: review and merge Dependabot PR #8 — inline — merge: 9c1a52e (all five SHAs match their upstream tags; release.yml usage compatible: download by name with `merge-multiple`, zipped uploads, `subject-path` unchanged; ci-gate SUCCESS on 5fd5dbc)
+- [x] T2 — S2: UX/UI audit of the running app (findings with screenshots, defect vs. decision) — verify — evidence: 12 findings (L3); parent spot-checked the tab overflow and address-box screenshots
+- [ ] T3 — S4, S5, S6, S8: audit defects, fixed window title, loading indicator, empty-tab hint (with tests for testable logic, Windows functional checks) — worker — commit: —
+- [ ] T3b — S7: app icon (artwork, Windows resource, window icon, macOS bundle icon) — worker — commit: —
+- [ ] T4 — S2: PR, ci-gate, merge — inline — merge: —
+- [ ] T5 — S3: version bump + CHANGELOG + tag + release verification — inline — release: —
+- [ ] T6 — S1: tell the owner the release is ready to test — inline — —
+
+## Log
+
+- L1 (user, original request): "Dale avanza en los pendientes y una vez finalicemos avisame asi hago la prueba completa, descargar el zip del repo y ejecutarlo en mi entorno local. Ademas revisemos bien que tenga buen estilo el navegador. Es decir buena UX/UI"
+- L2 (decision): order is PR #8 → UX/UI audit and fixes → release, so the archive the owner downloads includes the UX fixes. The version number (0.1.1 for fixes only, 0.2.0 if visible features change) is decided when S2's scope is known.
+- L3 (evidence, UX audit on Windows, fresh profile, 960x600): defects — (D1, high) tab strip overflows: labels never shrink (`tab_strip.rs:91-110`, max 220 px / 30 chars), with 8 tabs the last ones and the active tab are off-screen, no ellipsis; (D2, high) the window has no title (`GetWindowText` empty; no `set_title` in `crates/app`), so taskbar, Alt+Tab and meeting share pickers show a nameless window; (D3, medium) settings `−`/`+` reverse direction from the keyboard at the bounds: the focused button is disabled at 4/32 px and focus jumps to the other one (`settings_box.rs:178-181`); (D4, low) the address box is a square `#1E1E1E` slab around a rounded field (`address_box.rs:22,64-75`), a hard black block on light pages; (D5, low) the settings box has no edge on dark pages; (D6, low) tab labels use the system font instead of the app's `Segoe UI, Helvetica, Arial`; (D7, low) inactive tabs `#202020` on `#181818` barely separate; (D8, low) the `−` glyph looks lighter than `+`. Decisions — (Q1) window title shows the page title vs. a fixed name (privacy while sharing); (Q2) a loading indicator (none today); (Q3) an app icon (generic Windows icon today); (Q4) an empty-tab hint ("Ctrl+L to enter an address"); (Q5) classic light scrollbars are drawn by Chromium. Good: centered focused address box, Ctrl+L preselects the URL, no white flashes, dark error pages, clean 8 px frame, tab cycling, settings Esc/focus ring/persistence, frame drag and resize.
+- L4 (user decisions): window title — "Fijo: \"mini-browser\" (Recomendado)"; extras — "Indicador de carga", "Ícono de la app", "Ayuda en pestaña vacía". The release therefore adds visible features: version 0.2.0.
