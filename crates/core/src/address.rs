@@ -246,6 +246,11 @@ mod tests {
             "blob:https://a.com/x",
             "ftp://a.com",
             "http:/a.com",
+            "mini://home",
+            "mini://home/",
+            "mini://home/cmd/quit",
+            "MINI://HOME/",
+            "mini:home",
         ] {
             let url = resolve(input).unwrap();
             assert!(

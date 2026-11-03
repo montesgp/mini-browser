@@ -2,6 +2,7 @@
 //! with a plain `cargo test -p mini-core`.
 
 pub mod address;
+pub mod home;
 pub mod launch;
 pub mod layout;
 pub mod popups;
