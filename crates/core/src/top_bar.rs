@@ -1,6 +1,8 @@
 //! When the top bar shows. Pinned, always. In auto mode, while the pointer is at the top edge of
 //! the window or over the shown bar, for a moment after it leaves, and for a moment after the
-//! tabs change. The caller passes the current time, so the clock is under its control.
+//! tabs change. Choosing a tab in the auto-mode bar hides it at once, and it stays hidden until
+//! the pointer leaves the bar's area and comes back, or the tabs change again. The caller passes
+//! the current time, so the clock is under its control.
 
 use std::time::{Duration, Instant};
 
@@ -53,18 +55,33 @@ pub fn pointer_zone(
 pub struct TopBar {
     /// Until when the bar shows without the pointer on it.
     shown_until: Option<Instant>,
+    /// Hidden by [`TopBar::dismiss`] until the pointer is away.
+    dismissed: bool,
 }
 
 impl TopBar {
     /// Shows the bar for [`FLASH`] from `now`, unless it already shows longer.
     pub fn flash(&mut self, now: Instant) {
+        self.dismissed = false;
         self.show_until(now + FLASH);
+    }
+
+    /// Hides the auto-mode bar at once, after the user chose a tab in it; a pinned bar stays.
+    pub fn dismiss(&mut self, mode: TopBarMode) {
+        if mode == TopBarMode::Auto {
+            self.dismissed = true;
+            self.shown_until = None;
+        }
     }
 
     /// Whether the bar shows at `now` in `mode` with the pointer at `pointer`.
     pub fn update(&mut self, mode: TopBarMode, pointer: Pointer, now: Instant) -> bool {
         if mode == TopBarMode::Pinned {
             return true;
+        }
+        if self.dismissed {
+            self.dismissed = pointer != Pointer::Away;
+            return false;
         }
         let hovered = match pointer {
             Pointer::Edge => true,
@@ -230,6 +247,66 @@ mod tests {
         assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(100)));
         assert!(bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1499)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1500)));
+    }
+
+    #[test]
+    fn dismissing_hides_the_bar_at_once_with_the_pointer_still_on_it() {
+        let start = Instant::now();
+        let mut bar = TopBar::default();
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
+        bar.dismiss(TopBarMode::Auto);
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(200)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(300)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(5000)));
+    }
+
+    #[test]
+    fn a_dismissed_bar_shows_again_once_the_pointer_leaves_and_comes_back() {
+        let start = Instant::now();
+        let mut bar = TopBar::default();
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        bar.dismiss(TopBarMode::Auto);
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(200)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(300)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(400)));
+    }
+
+    #[test]
+    fn dismissing_cuts_the_flash_of_the_tab_change_short() {
+        let start = Instant::now();
+        let mut bar = TopBar::default();
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        // Choosing a tab changes the tabs, which flashes the bar, and then dismisses it.
+        bar.flash(start + ms(100));
+        bar.dismiss(TopBarMode::Auto);
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(200)));
+    }
+
+    #[test]
+    fn a_later_flash_shows_a_dismissed_bar() {
+        let start = Instant::now();
+        let mut bar = TopBar::default();
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        bar.dismiss(TopBarMode::Auto);
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
+        // A tab change from the keyboard.
+        bar.flash(start + ms(200));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1699)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1700)));
+    }
+
+    #[test]
+    fn dismissing_a_pinned_bar_changes_nothing() {
+        let start = Instant::now();
+        let mut bar = TopBar::default();
+        bar.dismiss(TopBarMode::Pinned);
+        assert!(bar.update(TopBarMode::Pinned, Pointer::Bar, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(100)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(200)));
     }
 
     #[test]

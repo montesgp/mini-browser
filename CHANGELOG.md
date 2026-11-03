@@ -8,6 +8,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 - A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse reaches the top edge of the window and hides half a second after it leaves, so a shared screen stays clean.
 - The bar shows for a moment when you open, close or switch tabs, so you see where you are, and says how many tabs do not fit (`+3`).
+- Clicking a tab in the `Auto` top bar hides the bar at once, so the page is whole again; it shows again once the mouse leaves the top and comes back. A `Pinned` bar stays.
+- A small `×` on the current tab and on the tab under the mouse closes that tab, following the `Ctrl/Cmd+W` rules (closing the last tab closes the window).
 - A "Top bar" setting, `Auto` or `Pinned`, in the settings box (`Ctrl/Cmd+,`), saved in `settings.json` as `topBar`. `Pinned` keeps the bar visible with the page below it. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change.
 
 ### Changed
