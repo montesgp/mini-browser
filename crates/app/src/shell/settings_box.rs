@@ -1,5 +1,6 @@
-//! The settings box: a small dark overlay to change the padding frame. Every change applies at
-//! once and is saved to the settings file.
+//! The settings box: a small dark overlay to change the padding frame, with a thin edge in the
+//! address box's border color so it stands out on dark pages. Every change applies at once and
+//! is saved to the settings file.
 
 use std::{cell::RefCell, path::PathBuf};
 
@@ -10,20 +11,24 @@ use mini_core::{
 };
 
 use super::{
-    address_box::{self, BOX_COLOR, TEXT_COLOR},
+    address_box::{self, BORDER_COLOR, BOX_COLOR, TEXT_COLOR},
     tabs,
     window::{self, DarkPanelDelegate},
 };
 
 const WIDTH: i32 = 280;
 const INSET: i32 = 14;
+const EDGE: i32 = 1;
 const DIM_TEXT_COLOR: u32 = 0xFF8C_8C8C;
-const DISABLED_BUTTON_COLOR: u32 = 0xFF4A_4A4A;
+/// A `−` / `+` button whose direction is at its bound.
+const BOUND_BUTTON_COLOR: u32 = 0xFF4A_4A4A;
 const WARNING_TEXT_COLOR: u32 = 0xFFD8_A657;
 /// Shown while the last change could not be saved to the settings file.
 const NOT_SAVED: &str = "Not saved: applies until restart";
 const FONT: &str = "Segoe UI, Helvetica, Arial, 14px";
 const TITLE_FONT: &str = "Segoe UI, Helvetica, Arial, Bold 15px";
+/// The `−` and `+` glyphs; at this size their strokes look equally heavy.
+const STEP_FONT: &str = "Segoe UI, Helvetica, Arial, 20px";
 const VALUE_WIDTH: i32 = 56;
 const BUTTON_SIZE: i32 = 28;
 
@@ -99,6 +104,9 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
     }
     panel.add_child_view(Some(&mut View::from(&row)));
     panel.add_child_view(Some(&mut View::from(&not_saved)));
+    let Some(panel) = edged(&panel) else {
+        return;
+    };
 
     let Some(controller) =
         window.add_overlay_view(Some(&mut View::from(&panel)), DockingMode::CUSTOM, 1)
@@ -123,6 +131,23 @@ pub fn destroy() {
     SETTINGS_BOX.take();
 }
 
+/// Wraps `content` in an [`EDGE`] wide frame in the border color.
+fn edged(content: &Panel) -> Option<Panel> {
+    let edge = panel_create(Some(&mut DarkPanelDelegate::new(BORDER_COLOR, 0)))?;
+    edge.set_to_box_layout(Some(&BoxLayoutSettings {
+        inside_border_insets: Insets {
+            top: EDGE,
+            left: EDGE,
+            bottom: EDGE,
+            right: EDGE,
+        },
+        cross_axis_alignment: AxisAlignment::STRETCH,
+        ..Default::default()
+    }));
+    edge.add_child_view(Some(&mut View::from(content)));
+    Some(edge)
+}
+
 /// A non-interactive line of text. Views has no label in the CEF API, so it is a disabled
 /// label button.
 fn text(text: &str, font: &str, color: u32) -> Option<LabelButton> {
@@ -144,9 +169,8 @@ fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
         Some(&mut SettingsButtonDelegate::new(steps)),
         Some(&CefString::from(label)),
     )?;
-    button.set_font_list(Some(&CefString::from(TITLE_FONT)));
+    button.set_font_list(Some(&CefString::from(STEP_FONT)));
     button.set_enabled_text_colors(TEXT_COLOR);
-    button.set_text_color(ButtonState::DISABLED, DISABLED_BUTTON_COLOR);
     button.set_horizontal_alignment(HorizontalAlignment::CENTER);
     let size = Size {
         width: BUTTON_SIZE,
@@ -163,12 +187,14 @@ fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
     Some(button)
 }
 
-/// Shows the current padding and disables the button that would leave the range.
+/// Shows the current padding and dims the button whose direction is at its bound. The button
+/// stays enabled and focusable, so the keyboard focus never jumps to the other one (which
+/// would make `Space` reverse direction); pressing it does nothing.
 fn show_padding() {
-    let Some((padding, minus, value, plus, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
+    let Some((settings, minus, value, plus, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
         settings_box.as_ref().map(|settings_box| {
             (
-                settings_box.settings.padding,
+                settings_box.settings.clone(),
                 settings_box.minus.clone(),
                 settings_box.value.clone(),
                 settings_box.plus.clone(),
@@ -178,9 +204,26 @@ fn show_padding() {
     }) else {
         return;
     };
+    let padding = settings.padding;
     value.set_text(Some(&CefString::from(format!("{padding} px").as_str())));
-    minus.set_enabled((padding > PADDING_MIN).into());
-    plus.set_enabled((padding < PADDING_MAX).into());
+    for (button, steps, name) in [
+        (&minus, -1, "Decrease padding"),
+        (&plus, 1, "Increase padding"),
+    ] {
+        let can_move = settings.can_move_padding(steps);
+        button.set_enabled_text_colors(if can_move {
+            TEXT_COLOR
+        } else {
+            BOUND_BUTTON_COLOR
+        });
+        let limit = if steps < 0 { PADDING_MIN } else { PADDING_MAX };
+        let accessible_name = if can_move {
+            name.to_owned()
+        } else {
+            format!("{name} (at {limit} px)")
+        };
+        button.set_accessible_name(Some(&CefString::from(accessible_name.as_str())));
+    }
     panel.layout();
 }
 
@@ -231,12 +274,13 @@ pub fn toggle() {
         hide();
         return;
     }
-    let Some((controller, minus, plus)) = SETTINGS_BOX.with_borrow(|settings_box| {
+    let Some((controller, minus, plus, at_max)) = SETTINGS_BOX.with_borrow(|settings_box| {
         settings_box.as_ref().map(|settings_box| {
             (
                 settings_box.controller.clone(),
                 settings_box.minus.clone(),
                 settings_box.plus.clone(),
+                !settings_box.settings.can_move_padding(1),
             )
         })
     }) else {
@@ -246,7 +290,7 @@ pub fn toggle() {
     reposition();
     controller.set_visible(1);
     // Focus a button, so the window gets `Esc` and the shortcuts.
-    let target = if plus.is_enabled() == 1 { plus } else { minus };
+    let target = if at_max { minus } else { plus };
     target.request_focus();
 }
 

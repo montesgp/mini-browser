@@ -1,5 +1,6 @@
-//! The floating address box: a dark text field centered near the top of the window, shown as a
-//! window overlay over the page.
+//! The floating address box: a dark rounded text field centered near the top of the window,
+//! shown as a window overlay over the page. The overlay around the field is transparent, so the
+//! field's own outline is the box's edge on light and dark pages alike.
 
 use std::cell::RefCell;
 
@@ -12,7 +13,7 @@ use super::{
 };
 
 pub const PLACEHOLDER: &str = "Enter URL or search…";
-/// Background of the box and its text field.
+/// Background of the address field and the settings box.
 pub const BOX_COLOR: u32 = 0xFF1E_1E1E;
 pub const TEXT_COLOR: u32 = 0xFFED_EDED;
 pub const PLACEHOLDER_COLOR: u32 = 0xFF8A_8A8A;
@@ -22,7 +23,10 @@ pub const SELECTION_COLOR: u32 = 0xFF2F_4A6D;
 const MAX_WIDTH: i32 = 640;
 /// Space kept free on each side of the box in narrow windows.
 const SIDE_MARGIN: i32 = 32;
-const INSET: i32 = 10;
+/// Height of the field, taller than its text needs so the box reads as the main input.
+const FIELD_HEIGHT: i32 = 44;
+/// The overlay's color around the field: transparent.
+const TRANSPARENT: u32 = 0;
 const FONT: &str = "Segoe UI, Helvetica, Arial, 16px";
 
 const VK_RETURN: i32 = 0x0D;
@@ -64,20 +68,19 @@ pub fn create(window: &Window, search_template: &str) {
     textfield.set_font_list(Some(&CefString::from(FONT)));
     textfield.set_accessible_name(Some(&CefString::from("Address")));
 
-    let Some(panel) = panel_create(Some(&mut DarkPanelDelegate::new(BOX_COLOR, 0))) else {
+    let Some(panel) = panel_create(Some(&mut DarkPanelDelegate::new(TRANSPARENT, FIELD_HEIGHT)))
+    else {
         return;
     };
-    panel.set_to_box_layout(Some(&BoxLayoutSettings {
-        inside_border_insets: Insets {
-            top: INSET,
-            left: INSET,
-            bottom: INSET,
-            right: INSET,
-        },
+    let layout = panel.set_to_box_layout(Some(&BoxLayoutSettings {
         cross_axis_alignment: AxisAlignment::STRETCH,
         ..Default::default()
     }));
-    panel.add_child_view(Some(&mut View::from(&textfield)));
+    let mut field_view = View::from(&textfield);
+    panel.add_child_view(Some(&mut field_view));
+    if let Some(layout) = layout {
+        layout.set_flex_for_view(Some(&mut field_view), 1);
+    }
 
     let Some(controller) =
         window.add_overlay_view(Some(&mut View::from(&panel)), DockingMode::CUSTOM, 1)

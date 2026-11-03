@@ -58,6 +58,12 @@ impl Settings {
         }
     }
 
+    /// Whether `steps` presses of the `+` / `-` buttons would change the padding, i.e. it is
+    /// not already at the bound in that direction.
+    pub fn can_move_padding(&self, steps: i32) -> bool {
+        self.with_padding_steps(steps).padding != self.padding
+    }
+
     /// Loads settings from `path`; a missing or unreadable file yields the defaults.
     pub fn load(path: &Path) -> Self {
         fs::read_to_string(path)
@@ -282,5 +288,20 @@ mod tests {
         assert_eq!(five.with_padding_steps(-1).padding, 4);
         let thirty_one = Settings::from_json(r#"{"padding":31}"#);
         assert_eq!(thirty_one.with_padding_steps(1).padding, 32);
+    }
+
+    #[test]
+    fn padding_can_move_away_from_a_bound_but_not_past_it() {
+        let at = |padding| Settings {
+            padding,
+            ..Settings::default()
+        };
+        assert!(!at(PADDING_MIN).can_move_padding(-1));
+        assert!(at(PADDING_MIN).can_move_padding(1));
+        assert!(!at(PADDING_MAX).can_move_padding(1));
+        assert!(at(PADDING_MAX).can_move_padding(-1));
+        assert!(at(PADDING_DEFAULT).can_move_padding(-1));
+        assert!(at(PADDING_DEFAULT).can_move_padding(1));
+        assert!(!at(PADDING_DEFAULT).can_move_padding(0));
     }
 }

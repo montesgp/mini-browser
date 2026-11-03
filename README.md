@@ -51,6 +51,9 @@ Keep the extracted folder together: the app needs the files next to it.
 
 Drag the dark frame to move the window. Type a website (`github.com`) or any words to search.
 
+- **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
+- **The tab list fits the window.** Long titles end in `…`; with more tabs than fit, it shows the ones around the current tab.
+
 ## Good to know
 
 - **Camera, microphone and location requests are not granted.** It is made for showing pages, not for joining calls; use your main browser for those.
@@ -78,7 +81,7 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table, pop-up throttle, window geometry. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model, settings, shortcut table, pop-up throttle, window geometry, tab strip layout. |
 | `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, tab strip, settings box. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |

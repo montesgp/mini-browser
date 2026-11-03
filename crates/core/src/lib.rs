@@ -6,4 +6,5 @@ pub mod layout;
 pub mod popups;
 pub mod settings;
 pub mod shortcuts;
+pub mod strip;
 pub mod tabs;

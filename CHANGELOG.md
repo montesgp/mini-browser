@@ -6,6 +6,11 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Fixed
 
+- The window title is always `mini-browser`; before, the window had no title, so the taskbar, `Alt+Tab` and share pickers showed a nameless window.
+- The tab strip fits the window: labels share its width evenly, long titles end in an ellipsis instead of overflowing, and with more tabs than fit the active tab stays visible. Labels use the app font, and inactive tabs stand out from the strip.
+- The settings box's `−` and `+` no longer reverse direction from the keyboard at 4 or 32 px: the button at its bound is dimmed but keeps the focus, and pressing it does nothing. `−` and `+` look equally heavy.
+- The address box no longer sits on a square dark slab that showed as a black block on light pages; only the rounded field shows. The settings box has a thin edge, so it stands out on dark pages.
+
 - Linux: the app now starts. The v0.1.0 Linux build could not find `libcef.so` next to the executable; it is now linked with an `$ORIGIN` runpath, and CI fails if the bundle cannot resolve its libraries.
 - Windows: when the app data directory cannot be found, an error dialog says so; before, the app quit without a visible message.
 - The settings box shows "Not saved" when the settings file cannot be written, until a later change saves.
