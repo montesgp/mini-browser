@@ -18,6 +18,12 @@ pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
 /// without revealing the page.
 const WINDOW_TITLE: &str = "mini-browser";
 
+/// The app icon (`assets/icon/icon.svg`) at 16x16 and 32x32 for the window icon, which CEF
+/// expects at 16x16, and at 512x512 for the app icon of the taskbar and the app switcher.
+const ICON_16_PNG: &[u8] = include_bytes!("../../../../assets/icon/icon-16.png");
+const ICON_32_PNG: &[u8] = include_bytes!("../../../../assets/icon/icon-32.png");
+const ICON_PNG: &[u8] = include_bytes!("../../../../assets/icon/icon.png");
+
 /// Initial window size in density-independent pixels; the window opens centered.
 const INITIAL_SIZE: Size = Size {
     width: 1280,
@@ -140,6 +146,14 @@ pub fn browser_settings() -> BrowserSettings {
     }
 }
 
+/// A CEF image with one PNG per scale factor, or `None` if CEF cannot decode one of them.
+fn icon_image(pngs: &[(f32, &[u8])]) -> Option<Image> {
+    let icon = image_create()?;
+    pngs.iter()
+        .all(|(scale, png)| icon.add_png(*scale, Some(png)) == 1)
+        .then_some(icon)
+}
+
 /// Box layout that insets the content by `padding` pixels on the left, right and bottom and
 /// stretches it to fill the rest of the window. The top side of the frame is the loading line's
 /// band, itself `padding` pixels tall.
@@ -238,6 +252,12 @@ wrap_window_delegate! {
             container.set_to_fill_layout();
 
             window.set_title(Some(&CefString::from(WINDOW_TITLE)));
+            if let Some(mut icon) = icon_image(&[(1.0, ICON_16_PNG), (2.0, ICON_32_PNG)]) {
+                window.set_window_icon(Some(&mut icon));
+            }
+            if let Some(mut icon) = icon_image(&[(1.0, ICON_PNG)]) {
+                window.set_window_app_icon(Some(&mut icon));
+            }
             window.set_background_color(BACKGROUND_COLOR);
             if let Some(band) = loading_line::create(self.settings.padding) {
                 window.add_child_view(Some(&mut View::from(&band)));
