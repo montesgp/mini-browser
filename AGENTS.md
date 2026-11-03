@@ -12,7 +12,7 @@ mini-browser is a minimal, dark, chrome-less Chromium browser for screen sharing
    User-supplied switches stay disabled (`command_line_args_disabled = 1`); read app options such as `--url` before `cef::initialize`, which clears the global command line.
 2. **The address box and `--url` only load `http(s)`.** Every other scheme becomes a search (`mini_core::address::resolve_input`).
 3. **The profile stays isolated** in the app data directory; no fallback to shared temporary folders.
-4. **No permanent browser chrome.** New UI is opt-in (shortcut or setting) and dark.
+4. **No permanent browser chrome by default.** The top bar (tabs and window buttons) appears only when the mouse reaches the top edge, when tabs change, or when the user pins it in settings. Other new UI is opt-in (shortcut or setting) and dark; no toolbars, bookmarks or extensions.
 5. **One codebase for Windows, macOS and Linux.** Platform code goes behind `cfg`; no platform-only UI toolkit.
 6. **Package name `minibrowser` has no hyphen:** on Windows the sandbox bootstrap loads `<name>.dll`.
 
@@ -40,7 +40,7 @@ Requirements: Rust stable, CMake and Ninja on `PATH`, a C++ toolchain. On Window
 
 ## Pull requests and releases
 
-- `main` is protected: changes land through PRs only, with `ci-gate` green on the head commit. Only the owner, [@montesgp](https://github.com/montesgp), merges. External contributors work from forks.
+- `main` is protected: changes land through PRs only, with `ci-gate` green on the head commit. Only the owner, [@montesgp](https://github.com/montesgp), merges external contributions. The owner's own coding agents merge their PRs once `ci-gate` is SUCCESS on the exact head commit; never merge into a branch whose checks did not run. External contributors work from forks.
 - Releases are tag-driven (`vX.Y.Z` on a commit already on `main`); the steps are in the README's [Versioning and releases](README.md#versioning-and-releases) section. Do not create tags or releases unless the maintainer asks.
 
 ## Known platform quirks
