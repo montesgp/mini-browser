@@ -19,7 +19,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
     env:
       PACKAGE: mini-browser-v${{ needs.check.outputs.version }}-${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Rust
         shell: bash
@@ -114,6 +114,12 @@ jobs:
           mkdir -p "${out}"
           cp -R dist/bundle/. "${out}/"
           rm -f "${out}/CMakeLists.txt" "${out}/archive.json"
+          # CEF ships libcef.so with debug symbols (~1.4 GB); stripping them cuts the archive
+          # size several-fold without changing behavior.
+          strip --strip-unneeded "${out}/libcef.so" "${out}/minibrowser"
+          ls -la "${out}/libcef.so" "${out}/minibrowser"
+          readelf -d "${out}/minibrowser" | grep -E 'RUNPATH|RPATH'
+          if ldd "${out}/minibrowser" | grep 'not found'; then exit 1; fi
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
           tar -C dist -czf "dist/${PACKAGE}.tar.gz" "${PACKAGE}"
 
@@ -121,7 +127,7 @@ jobs:
         shell: bash
         run: ls -la "dist/${PACKAGE}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ env.PACKAGE }}
           path: |
@@ -138,9 +144,9 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -153,7 +159,7 @@ jobs:
 
       # Signed build provenance: `gh attestation verify <file> -R montesgp/mini-browser`.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             dist/*.zip
