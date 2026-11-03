@@ -10,6 +10,8 @@ mod app;
 pub mod client;
 mod commands;
 pub mod data_dir;
+mod hint;
+mod loading_line;
 mod settings_box;
 mod tab_strip;
 mod tabs;

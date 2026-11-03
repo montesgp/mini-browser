@@ -6,11 +6,15 @@ pub type TabId = u64;
 /// Title shown for a tab that has neither a title nor a URL yet.
 pub const NEW_TAB_TITLE: &str = "New Tab";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tab {
     pub id: TabId,
     pub title: String,
     pub url: String,
+    /// Whether the tab's page is loading.
+    pub loading: bool,
+    /// Opened by the user without an address and not navigated yet.
+    pub blank: bool,
 }
 
 impl Tab {
@@ -20,6 +24,17 @@ impl Tab {
             .into_iter()
             .find(|text| !text.is_empty())
             .unwrap_or(NEW_TAB_TITLE)
+    }
+
+    /// Whether the tab shows the empty-tab hint: only blank tabs do.
+    pub fn shows_hint(&self) -> bool {
+        self.blank
+    }
+
+    /// Whether the tab shows the loading line: while it loads, except the blank page of a
+    /// blank tab.
+    pub fn shows_loading(&self) -> bool {
+        self.loading && !self.blank
     }
 }
 
@@ -44,11 +59,19 @@ impl Tabs {
             index,
             Tab {
                 id,
-                title: String::new(),
-                url: String::new(),
+                ..Tab::default()
             },
         );
         self.active = Some(index);
+        id
+    }
+
+    /// Opens a blank tab (see [`Tab::blank`]) like [`Tabs::open`].
+    pub fn open_blank(&mut self) -> TabId {
+        let id = self.open();
+        if let Some(tab) = self.get_mut(id) {
+            tab.blank = true;
+        }
         id
     }
 
@@ -94,10 +117,18 @@ impl Tabs {
         }
     }
 
-    /// Updates a tab's URL. Unknown ids are ignored.
+    /// Updates whether a tab is loading. Unknown ids are ignored.
+    pub fn set_loading(&mut self, id: TabId, loading: bool) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.loading = loading;
+        }
+    }
+
+    /// Updates a tab's URL; a non-empty URL ends a blank tab. Unknown ids are ignored.
     pub fn set_url(&mut self, id: TabId, url: &str) {
         if let Some(tab) = self.get_mut(id) {
             tab.url = url.to_owned();
+            tab.blank &= url.is_empty();
         }
     }
 
@@ -272,13 +303,53 @@ mod tests {
     fn display_title_falls_back_to_url_then_new_tab() {
         let mut tab = Tab {
             id: 1,
-            title: String::new(),
-            url: String::new(),
+            ..Tab::default()
         };
         assert_eq!(tab.display_title(), NEW_TAB_TITLE);
         tab.url = "https://vercel.com/".into();
         assert_eq!(tab.display_title(), "https://vercel.com/");
         tab.title = "Vercel".into();
         assert_eq!(tab.display_title(), "Vercel");
+    }
+
+    #[test]
+    fn only_blank_tabs_show_the_hint_until_they_get_a_url() {
+        let mut tabs = Tabs::new();
+        let popup = tabs.open();
+        let blank = tabs.open_blank();
+        assert_eq!(active_id(&tabs), Some(blank));
+        assert!(!tabs.get(popup).unwrap().shows_hint());
+        assert!(tabs.get(blank).unwrap().shows_hint());
+        tabs.set_url(blank, "");
+        assert!(tabs.get(blank).unwrap().shows_hint());
+        tabs.set_url(blank, "https://github.com/");
+        assert!(!tabs.get(blank).unwrap().shows_hint());
+        tabs.set_url(blank, "");
+        assert!(!tabs.get(blank).unwrap().shows_hint());
+    }
+
+    #[test]
+    fn loading_is_tracked_per_tab() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        tabs.set_loading(a, true);
+        assert!(tabs.get(a).unwrap().shows_loading());
+        assert!(!tabs.active().unwrap().shows_loading());
+        tabs.set_loading(b, true);
+        assert!(tabs.active().unwrap().shows_loading());
+        tabs.set_loading(b, false);
+        assert!(!tabs.active().unwrap().shows_loading());
+        assert!(!tabs.get(c).unwrap().shows_loading());
+        tabs.set_loading(99, true);
+        assert!(tabs.iter().filter(|tab| tab.loading).count() == 1);
+    }
+
+    #[test]
+    fn a_blank_tab_loading_its_blank_page_shows_no_loading_line() {
+        let mut tabs = Tabs::new();
+        let blank = tabs.open_blank();
+        tabs.set_loading(blank, true);
+        assert!(!tabs.get(blank).unwrap().shows_loading());
+        tabs.set_url(blank, "https://github.com/");
+        assert!(tabs.get(blank).unwrap().shows_loading());
     }
 }

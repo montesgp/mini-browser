@@ -1,5 +1,7 @@
-//! The frameless, dark top-level window: a dark padding frame that drags the window, the tab
-//! strip on top, the tabs' browser views below and the address and settings boxes as overlays. Window and browser view delegates are derived from the cef-rs
+//! The frameless, dark top-level window: a dark padding frame that drags the window (its top
+//! side holds the loading line), the tab strip on top, the tabs' browser views below and the
+//! hint and the address and settings boxes as overlays. Window and browser view delegates are
+//! derived from the cef-rs
 //! `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
 use std::{cell::RefCell, path::PathBuf};
@@ -7,7 +9,7 @@ use std::{cell::RefCell, path::PathBuf};
 use cef::{sys::cef_color_id_t, *};
 use mini_core::{layout, settings::Settings};
 
-use super::{address_box, commands, settings_box, tab_strip, tabs};
+use super::{address_box, commands, hint, loading_line, settings_box, tab_strip, tabs};
 
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
@@ -65,6 +67,7 @@ pub fn set_padding(padding: u32) {
     }) else {
         return;
     };
+    loading_line::set_height(padding);
     apply_layout(&window, &mut content, padding);
     window.layout();
     update_drag_regions();
@@ -137,13 +140,14 @@ pub fn browser_settings() -> BrowserSettings {
     }
 }
 
-/// Box layout that insets the content by `padding` pixels on every side and stretches it to
-/// fill the rest of the window.
+/// Box layout that insets the content by `padding` pixels on the left, right and bottom and
+/// stretches it to fill the rest of the window. The top side of the frame is the loading line's
+/// band, itself `padding` pixels tall.
 fn padded_layout(padding: u32) -> BoxLayoutSettings {
     let padding = i32::try_from(padding).unwrap_or(i32::MAX);
     BoxLayoutSettings {
         inside_border_insets: Insets {
-            top: padding,
+            top: 0,
             left: padding,
             bottom: padding,
             right: padding,
@@ -214,6 +218,7 @@ wrap_window_delegate! {
         fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
             address_box::reposition();
             settings_box::reposition();
+            hint::reposition();
             tab_strip::fit();
             update_drag_regions();
         }
@@ -234,6 +239,9 @@ wrap_window_delegate! {
 
             window.set_title(Some(&CefString::from(WINDOW_TITLE)));
             window.set_background_color(BACKGROUND_COLOR);
+            if let Some(band) = loading_line::create(self.settings.padding) {
+                window.add_child_view(Some(&mut View::from(&band)));
+            }
             if let Some(strip) = tab_strip::create() {
                 window.add_child_view(Some(&mut View::from(&strip)));
             }
@@ -245,7 +253,8 @@ wrap_window_delegate! {
                 content: container_view,
                 padding: self.settings.padding,
             }));
-            // Added last so they stay above the other views.
+            // Added last so they stay above the other views; the boxes above the hint.
+            hint::create(window);
             address_box::create(window, &self.settings.search_template);
             settings_box::create(window, self.settings.clone(), self.settings_path.clone());
 
@@ -260,6 +269,8 @@ wrap_window_delegate! {
             address_box::destroy();
             settings_box::destroy();
             tab_strip::destroy();
+            hint::destroy();
+            loading_line::destroy();
             FRAME.take();
         }
 

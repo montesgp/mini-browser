@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use cef::*;
 use mini_core::tabs::{TabId, Tabs};
 
-use super::{address_box, tab_strip, window};
+use super::{address_box, hint, loading_line, tab_strip, window};
 
 /// URL of a tab that has not navigated yet. The model stores it as an empty URL.
 const BLANK_URL: &str = "about:blank";
@@ -19,9 +19,6 @@ struct Shell {
     client: Client,
     tabs: Tabs,
     views: Vec<(TabId, BrowserView)>,
-    /// Tabs the user opened without an address that have not navigated yet: they show the
-    /// address box. Popups never do, even before their URL is known.
-    empty: Vec<TabId>,
 }
 
 impl Shell {
@@ -66,7 +63,6 @@ pub fn attach(window: Window, container: Panel, client: Client) {
         client,
         tabs: Tabs::new(),
         views: Vec::new(),
-        empty: Vec::new(),
     }));
 }
 
@@ -75,7 +71,8 @@ pub fn detach() {
     SHELL.take();
 }
 
-/// Opens a tab after the active one. With `url` it loads it; without, it shows the address box.
+/// Opens a tab after the active one. With `url` it loads it; without, it is a blank tab (see
+/// `mini_core::tabs::Tab::blank`) showing the address box and the hint.
 pub fn open_tab(url: Option<&str>) {
     let Some(mut client) = with_shell(|shell| shell.client.clone()) else {
         return;
@@ -98,14 +95,15 @@ pub fn adopt_popup(view: BrowserView) {
     add_tab(view, None, false);
 }
 
-fn add_tab(view: BrowserView, url: Option<&str>, empty: bool) {
+fn add_tab(view: BrowserView, url: Option<&str>, blank: bool) {
     let Some(container) = with_shell(|shell| {
-        let id = shell.tabs.open();
+        let id = if blank {
+            shell.tabs.open_blank()
+        } else {
+            shell.tabs.open()
+        };
         if let Some(url) = url {
             shell.tabs.set_url(id, url);
-        }
-        if empty {
-            shell.empty.push(id);
         }
         shell.views.push((id, view.clone()));
         shell.container.clone()
@@ -116,16 +114,13 @@ fn add_tab(view: BrowserView, url: Option<&str>, empty: bool) {
     show_active();
 }
 
-/// Makes the active tab's view the only visible one and updates the address box and strip.
-/// The address box opens over an empty tab the user opened (see `Shell::empty`).
+/// Makes the active tab's view the only visible one and updates the address box, strip, hint
+/// and loading line. The address box opens over a blank tab.
 fn show_active() {
     let Some((views, active, is_blank)) = with_shell(|shell| {
         let views: Vec<BrowserView> = shell.views.iter().map(|(_, view)| view.clone()).collect();
         let active = shell.active_view().cloned();
-        let is_blank = shell
-            .tabs
-            .active()
-            .is_some_and(|tab| shell.empty.contains(&tab.id));
+        let is_blank = shell.tabs.active().is_some_and(|tab| tab.blank);
         (views, active, is_blank)
     }) else {
         return;
@@ -140,6 +135,7 @@ fn show_active() {
     hide_all_but(&views, &active);
     active.set_visible(1);
     tab_strip::refresh();
+    show_indicators();
     if is_blank {
         address_box::show("");
     } else {
@@ -206,7 +202,6 @@ pub fn close_tab_for(browser: &Browser) -> bool {
             return None;
         }
         shell.tabs.close(id);
-        shell.empty.retain(|tab| *tab != id);
         let index = shell.views.iter().position(|(tab, _)| *tab == id)?;
         let (_, view) = shell.views.remove(index);
         Some((shell.container.clone(), view))
@@ -276,9 +271,9 @@ pub fn navigate_active(url: &str) {
     with_shell(|shell| {
         if let Some(id) = shell.tabs.active().map(|tab| tab.id) {
             shell.tabs.set_url(id, url);
-            shell.empty.retain(|tab| *tab != id);
         }
     });
+    show_indicators();
     with_active_browser(|browser| {
         if let Some(frame) = browser.main_frame() {
             frame.load_url(Some(&CefString::from(url)));
@@ -294,7 +289,12 @@ pub fn set_url(browser: &Browser, url: &str) {
     update(browser, |tabs, id| tabs.set_url(id, page_text(url)));
 }
 
-/// Applies `f` to the tab of `browser` and shows the tab's new title in the strip.
+pub fn set_loading(browser: &Browser, loading: bool) {
+    update(browser, |tabs, id| tabs.set_loading(id, loading));
+}
+
+/// Applies `f` to the tab of `browser`, shows the tab's new title in the strip and updates the
+/// hint and loading line.
 fn update(browser: &Browser, f: impl FnOnce(&mut Tabs, TabId)) {
     let updated = with_shell(|shell| {
         let id = shell.tab_for(browser)?;
@@ -305,7 +305,22 @@ fn update(browser: &Browser, f: impl FnOnce(&mut Tabs, TabId)) {
     .flatten();
     if let Some((id, title)) = updated {
         tab_strip::retitle(id, &title);
+        show_indicators();
     }
+}
+
+/// Shows the hint and the loading line as the active tab needs them.
+fn show_indicators() {
+    let (hint, loading) = with_shell(|shell| {
+        shell
+            .tabs
+            .active()
+            .map(|tab| (tab.shows_hint(), tab.shows_loading()))
+    })
+    .flatten()
+    .unwrap_or_default();
+    hint::set_visible(hint);
+    loading_line::set_loading(loading);
 }
 
 /// The blank page reports its URL as its title; neither is shown.

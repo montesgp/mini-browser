@@ -41,6 +41,28 @@ wrap_client! {
         fn drag_handler(&self) -> Option<DragHandler> {
             Some(MiniDragHandler::new())
         }
+
+        fn load_handler(&self) -> Option<LoadHandler> {
+            Some(MiniLoadHandler::new())
+        }
+    }
+}
+
+wrap_load_handler! {
+    struct MiniLoadHandler;
+
+    impl LoadHandler {
+        fn on_loading_state_change(
+            &self,
+            browser: Option<&mut Browser>,
+            is_loading: i32,
+            _can_go_back: i32,
+            _can_go_forward: i32,
+        ) {
+            if let Some(browser) = browser {
+                tabs::set_loading(browser, is_loading == 1);
+            }
+        }
     }
 }
 
