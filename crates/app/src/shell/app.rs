@@ -3,15 +3,27 @@
 use cef::*;
 use mini_core::{
     address::resolve_input,
+    launch::{self, Relaunch},
     settings::{SETTINGS_FILE, Settings},
 };
 
 use std::path::PathBuf;
 
-use super::{client::MiniClient, window};
+use super::{client::MiniClient, tabs, window};
+
+/// The `--url` input of `command_line` (`--url=<input>` or `--url <input>`), empty without one.
+pub fn url_input(command_line: &CommandLine) -> String {
+    let name = CefString::from("url");
+    let switch = (command_line.has_switch(Some(&name)) == 1)
+        .then(|| CefString::from(&command_line.switch_value(Some(&name))).to_string());
+    let mut arguments = CefStringList::new();
+    command_line.arguments(Some(&mut arguments));
+    let arguments: Vec<String> = arguments.into_iter().collect();
+    launch::url_input(switch.as_deref(), &arguments)
+}
 
 // `data_dir` is the app data directory holding the profile and the settings file;
-// `url_input` is the value of the `--url=` switch, empty without one.
+// `url_input` is the `--url` input of the command line, empty without one.
 wrap_app! {
     pub struct MiniApp {
         data_dir: PathBuf,
@@ -27,6 +39,14 @@ wrap_app! {
             let is_browser_process = process_type.is_none_or(|kind| kind.to_string().is_empty());
             if let (true, Some(command_line)) = (is_browser_process, command_line) {
                 add_platform_switches(command_line);
+                // User switches are cleared by now. When the app already runs, CEF forwards this
+                // command line to it, so the `--url` input read before `initialize` goes back in.
+                if !self.url_input.is_empty() {
+                    command_line.append_switch_with_value(
+                        Some(&CefString::from("url")),
+                        Some(&CefString::from(self.url_input.as_str())),
+                    );
+                }
             }
         }
 
@@ -80,6 +100,25 @@ wrap_browser_process_handler! {
             // or a search. `None` (no switch or an empty one) starts with an empty tab.
             let url = resolve_input(&self.url_input, &settings.search_template);
             window::open(MiniClient::new(), settings, settings_path, url);
+        }
+
+        fn on_already_running_app_relaunch(
+            &self,
+            command_line: Option<&mut CommandLine>,
+            _current_directory: Option<&CefString>,
+        ) -> i32 {
+            // The app was launched again while it runs. `command_line` is the new launch's,
+            // already cleared of user switches, plus its `--url` input (see
+            // `on_before_command_line_processing`); only that input is used, with the first
+            // launch's rules. Always handled, so Chromium never opens its default browser window
+            // with tabs and toolbar.
+            let url_input = command_line.map(|line| url_input(line)).unwrap_or_default();
+            let settings = Settings::load(&self.data_dir.join(SETTINGS_FILE));
+            if let Relaunch::OpenTab(url) = launch::relaunch(&url_input, &settings.search_template) {
+                tabs::open_tab(Some(&url));
+            }
+            window::bring_to_front();
+            1
         }
 
         fn default_client(&self) -> Option<Client> {

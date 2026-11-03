@@ -2,8 +2,10 @@
 //! with a plain `cargo test -p mini-core`.
 
 pub mod address;
+pub mod launch;
 pub mod layout;
 pub mod popups;
 pub mod settings;
 pub mod shortcuts;
+pub mod strip;
 pub mod tabs;

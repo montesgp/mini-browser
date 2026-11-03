@@ -12,6 +12,10 @@ use super::{address_box, commands, settings_box, tab_strip, tabs};
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
 
+/// The window's title, whatever page is open: share pickers and the taskbar show the app name
+/// without revealing the page.
+const WINDOW_TITLE: &str = "mini-browser";
+
 /// Initial window size in density-independent pixels; the window opens centered.
 const INITIAL_SIZE: Size = Size {
     width: 1280,
@@ -35,6 +39,20 @@ pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Opt
     // The window shows itself once created.
     let mut delegate = MiniWindowDelegate::new(client, settings, settings_path, url);
     window_create_top_level(Some(&mut delegate));
+}
+
+/// Shows the window in front of the others, restored if it was minimized.
+pub fn bring_to_front() {
+    let Some(window) = FRAME.with_borrow(|frame| frame.as_ref().map(|frame| frame.window.clone()))
+    else {
+        return;
+    };
+    if window.is_minimized() == 1 {
+        window.restore();
+    }
+    window.show();
+    window.activate();
+    window.bring_to_top();
 }
 
 /// Changes the width of the padding frame and lays the window out again.
@@ -135,7 +153,8 @@ fn padded_layout(padding: u32) -> BoxLayoutSettings {
     }
 }
 
-/// Theme colors that keep the address box dark.
+/// Theme colors that keep the address box dark. The field's outline and focus ring are its
+/// edge; Views keeps focus rings at a minimum contrast with the field, so they cannot be hidden.
 const THEME_COLORS: [(cef_color_id_t, u32); 8] = [
     (
         cef_color_id_t::CEF_ColorTextfieldBackground,
@@ -195,6 +214,7 @@ wrap_window_delegate! {
         fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
             address_box::reposition();
             settings_box::reposition();
+            tab_strip::fit();
             update_drag_regions();
         }
     }
@@ -212,6 +232,7 @@ wrap_window_delegate! {
             };
             container.set_to_fill_layout();
 
+            window.set_title(Some(&CefString::from(WINDOW_TITLE)));
             window.set_background_color(BACKGROUND_COLOR);
             if let Some(strip) = tab_strip::create() {
                 window.add_child_view(Some(&mut View::from(&strip)));
