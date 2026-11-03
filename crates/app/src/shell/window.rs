@@ -1,15 +1,14 @@
 //! The frameless, dark top-level window: a dark padding frame that drags the window (its top
 //! side holds the loading line), the tabs' browser views inside it, and as overlays the top bar
-//! (tabs and window buttons), the hint and the address and settings boxes. Window and browser view delegates are
-//! derived from the cef-rs
-//! `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
+//! (tabs and window buttons) and the address and settings boxes. Window and browser view
+//! delegates are derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
 use std::{cell::RefCell, path::PathBuf};
 
 use cef::{sys::cef_color_id_t, *};
 use mini_core::{layout, settings::Settings};
 
-use super::{address_box, commands, hint, loading_line, settings_box, tab_strip, tabs, top_bar};
+use super::{address_box, commands, loading_line, settings_box, tab_strip, tabs, top_bar};
 
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
@@ -41,8 +40,8 @@ thread_local! {
     static FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
 }
 
-/// Opens the top-level window with one tab loading `url`, or with an empty tab showing the
-/// address box when `url` is `None`. `settings_path` is where the settings box saves changes.
+/// Opens the top-level window with one tab loading `url`, or the home page when `url` is
+/// `None`. `settings_path` is where the settings box saves changes.
 pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Option<String>) {
     // The window shows itself once created.
     let mut delegate = MiniWindowDelegate::new(client, settings, settings_path, url);
@@ -237,7 +236,6 @@ wrap_window_delegate! {
         fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
             address_box::reposition();
             settings_box::reposition();
-            hint::reposition();
             top_bar::reposition();
             tab_strip::fit();
             update_drag_regions();
@@ -281,8 +279,7 @@ wrap_window_delegate! {
                 content: container_view,
                 padding: self.settings.padding,
             }));
-            // Added last so they stay above the other views; the boxes above the hint.
-            hint::create(window);
+            // Added last so they stay above the other views.
             address_box::create(window, &self.settings.search_template);
             settings_box::create(window, self.settings.clone(), self.settings_path.clone());
 
@@ -298,7 +295,6 @@ wrap_window_delegate! {
             settings_box::destroy();
             top_bar::destroy();
             tab_strip::destroy();
-            hint::destroy();
             loading_line::destroy();
             FRAME.take();
         }

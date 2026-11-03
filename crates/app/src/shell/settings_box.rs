@@ -312,8 +312,17 @@ fn show_padding() {
     panel.layout();
 }
 
+/// The current settings.
+pub fn settings() -> Option<Settings> {
+    SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box
+            .as_ref()
+            .map(|settings_box| settings_box.settings.clone())
+    })
+}
+
 /// Moves the padding by `steps`, applies it to the window and saves it.
-fn step(steps: i32) {
+pub fn step(steps: i32) {
     let Some(settings) = change(|settings| settings.with_padding_steps(steps)) else {
         return;
     };

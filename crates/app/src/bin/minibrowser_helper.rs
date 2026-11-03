@@ -6,6 +6,9 @@
 
 use cef::{args::Args, *};
 
+#[path = "../scheme.rs"]
+mod scheme;
+
 fn main() {
     let args = Args::new();
 
@@ -28,7 +31,7 @@ fn main() {
 
     execute_process(
         Some(args.as_main_args()),
-        None::<&mut App>,
+        Some(&mut scheme::SubprocessApp::new()),
         std::ptr::null_mut(),
     );
 }

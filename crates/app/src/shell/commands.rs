@@ -4,7 +4,7 @@
 use cef::{sys::cef_event_flags_t, *};
 use mini_core::shortcuts::{self, Command, Modifiers, Platform};
 
-use super::{address_box, settings_box, tabs};
+use super::{address_box, home, settings_box, tabs};
 
 /// The command bound to the key and modifiers of `event`, whatever the event type.
 fn command_for_event(event: &KeyEvent) -> Option<Command> {
@@ -53,6 +53,8 @@ wrap_task! {
 
 pub fn run(command: Command) {
     match command {
+        // The home page has its own address field.
+        Command::FocusAddress if tabs::active_is_home() => home::focus_address_field(),
         Command::FocusAddress => address_box::show(&tabs::active_url()),
         Command::NewTab => tabs::open_tab(None),
         Command::CloseTab => tabs::close_active(),

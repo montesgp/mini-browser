@@ -3,6 +3,8 @@
 //! configuration the library is empty and the `minibrowser` binary is the entry point.
 
 #[cfg(all(target_os = "windows", feature = "sandbox"))]
+mod scheme;
+#[cfg(all(target_os = "windows", feature = "sandbox"))]
 mod shell;
 #[cfg(all(target_os = "windows", feature = "sandbox"))]
 mod win;

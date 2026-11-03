@@ -14,7 +14,7 @@ A minimal, dark, chrome-less Chromium browser for screen sharing, streaming and 
 
 - **Just the page.** No toolbar, no address bar, no title bar: the website sits inside a thin dark frame, so what you share is only what matters.
 - **Tabs and window buttons when you reach for them.** Move the mouse to the top edge of the window and a thin bar slides in with your tabs and the minimize, maximize and close buttons. It hides again when the mouse leaves, or stays if you pin it.
-- **Type an address when you need one.** Press `Ctrl+L` (`Cmd+L` on Mac), type, press `Enter`. It disappears again.
+- **A calm start page.** New tabs open a dark home page with one field: type an address or a search and press `Enter`. On any other page, press `Ctrl+L` (`Cmd+L` on Mac) to type an address; the box disappears again.
 - **Separate from your browser.** Its own cookies and history, nothing from your everyday browser shows up in a meeting.
 - **Real Chromium, with its security on.** Same engine as Chrome, with Chromium's sandbox enabled.
 
@@ -52,7 +52,8 @@ Keep the extracted folder together: the app needs the files next to it.
 
 Drag the dark frame to move the window, double-click it to maximize or restore, and drag its edges to resize. Type a website (`github.com`) or any words to search.
 
-- **A new tab shows a faint hint**, `Ctrl+L to enter an address` (`Cmd+L` on Mac), until a page loads.
+- **The home page lists every shortcut.** The small keyboard button next to its field opens a card with each shortcut (`Ctrl` or `Cmd` for your system) and its action; click a row to run it, use `−` and `+` to change the frame size, or click the top bar row to switch between `Auto` and `Pinned`. The card stays open or closed as you left it. `Tab`, `Enter` and `Space` work too.
+- **Back from the first page returns to the home page**, with `Alt+Left` (`Cmd+[` on Mac), the mouse back button or the right-click menu. Tabs that start on a page (`--url=…` or a pop-up) have nothing to go back to.
 - **A thin blue line moves along the top of the frame** while the page loads.
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.
 - **The top bar shows where you are.** Click a tab to switch to it; in `Auto` the bar then hides at once so the page is whole again, and shows again when you move the mouse away from the top and back. The bar also shows for a moment when you open, close or switch tabs from the keyboard.
@@ -87,8 +88,9 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading and blank state), settings, shortcut table, pop-up throttle, window geometry, tab strip layout, top bar visibility. |
-| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, top bar (tab strip and window buttons), settings box, loading line, empty-tab hint. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading state), settings, shortcut table, home page routes and commands, pop-up throttle, window geometry, tab strip layout, top bar visibility. |
+| `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, top bar (tab strip and window buttons), settings box, loading line, the `mini` scheme and the home page handler. |
+| `crates/app/home` | The home page's `index.html`, `home.css` and `home.js`, embedded in the app with `include_str!`. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
 | `assets/icon` | The app icon: `icon.svg` is the master; `icon.ico`, `icon.icns` and the PNGs are rasters of it. |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
@@ -142,7 +144,16 @@ Implemented in `crates/core/src/address.rs`:
 
 - `http://` and `https://` input loads as typed.
 - Host-like input gets `https://`: at least two dot-separated labels ending in an alphabetic or punycode TLD, no `@` in the authority (`github.com`, `vercel.com/home`, `medium.com/@user`). `localhost` and IP addresses get `http://`.
-- Everything else is a search through the configured template, including any other scheme (`javascript:`, `file:`, `data:`, `chrome:`). Empty input does nothing.
+- Everything else is a search through the configured template, including any other scheme (`javascript:`, `file:`, `data:`, `chrome:`, and the app's own `mini:`). Empty input does nothing.
+
+## Home page
+
+New tabs load `mini://home/`, so it is the first entry of their history and Back from the first page returns to it. `mini` is a custom scheme registered in every process type (`crates/app/src/scheme.rs`: the browser process's app, and `SubprocessApp` for the renderer, GPU and utility processes, also in the macOS helper) as standard, secure, display-isolated and fetch-enabled: the home page is a normal origin with its own storage, and web pages cannot link to it or frame it.
+
+- **Files:** `crates/app/src/shell/home.rs` registers a scheme handler factory for `mini://home/` that serves the embedded files with `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` and `X-Frame-Options: DENY`. Nothing remote loads; fonts are the system's.
+- **Command bridge:** the page calls `fetch('/cmd/<name>')` on its own origin. `mini_core::home::route` maps the URL to a fixed list (`go?input=`, `new-tab`, `close-tab`, `next-tab`, `previous-tab`, `back`, `forward`, `reload`, `top-bar`, `padding?step=-1|1`, `quit`) plus `state`; anything else is `404`. A command runs only when the request is a `GET` `fetch` from a main frame whose URL is under `mini://home/` (checked on the IO thread) and its browser is the active tab, still on the home page (checked on the UI thread, where the command runs through `commands::run`, `settings_box::step` or `tabs::navigate_active`); otherwise the reply is `403` and nothing runs. Every answer is the state JSON `{"platform", "padding", "topBar"}`.
+- **Input:** `go` resolves its input with `resolve_input`, so `mini://home/cmd/quit` typed in the field is a search.
+- **Shell integration:** the tab strip shows `New tab` for the home page and no loading line; `Ctrl/Cmd+L` on the home page focuses its field (`Frame::execute_java_script` calls `window.miniFocusAddress`) instead of opening the address box.
 
 ## Settings file
 
@@ -184,6 +195,7 @@ The top bar (`crates/app/src/shell/top_bar.rs`) is a window overlay below the fr
 - **Sandbox on** on every platform. On Windows the bundle runs through CEF's `bootstrap.exe`, which hosts the app's DLL so renderer, GPU and utility processes start sandboxed.
 - **Isolated profile** in the app data directory.
 - **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect, also when it is a second launch handed to the running app. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
+- **Home page bridge:** the `mini://home/` page can ask the app to run only its listed commands, and only from the active tab's main frame while it shows the home page; web pages cannot link to, frame or `fetch` it (see [Home page](#home-page)).
 - **Pop-up throttle:** pop-ups become tabs, at most 3 per window every 2 seconds, shared by all pages so a chain of pop-ups cannot reset it (`mini_core::popups::PopupThrottle` with one key); extra ones are cancelled and logged to stderr.
 - **No permission prompts:** tabs use CEF's Alloy runtime style (CEF allows one Chrome-style browser per window), which has no permission UI, and no permission handler is registered, so camera, microphone, location and similar requests are not granted.
 

@@ -7,6 +7,8 @@
 )]
 
 #[cfg(not(all(feature = "sandbox", target_os = "windows")))]
+mod scheme;
+#[cfg(not(all(feature = "sandbox", target_os = "windows")))]
 mod shell;
 
 #[cfg(target_os = "macos")]

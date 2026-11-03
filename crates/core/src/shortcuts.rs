@@ -59,14 +59,6 @@ impl Platform {
     }
 }
 
-/// The hint shown on an empty tab, naming the address shortcut of `platform`.
-pub fn address_hint(platform: Platform) -> &'static str {
-    match platform {
-        Platform::MacOs => "Cmd+L to enter an address",
-        Platform::Other => "Ctrl+L to enter an address",
-    }
-}
-
 /// The command bound to `windows_key_code` pressed with exactly `modifiers`, if any. The
 /// primary modifier is Command on macOS and Ctrl elsewhere; extra modifiers never match.
 pub fn command_for(
@@ -262,11 +254,5 @@ mod tests {
     #[test]
     fn cmd_tab_is_not_bound_on_macos() {
         assert_eq!(mac(key::TAB, CMD), None);
-    }
-
-    #[test]
-    fn the_address_hint_names_the_platform_shortcut() {
-        assert_eq!(address_hint(Platform::Other), "Ctrl+L to enter an address");
-        assert_eq!(address_hint(Platform::MacOs), "Cmd+L to enter an address");
     }
 }
