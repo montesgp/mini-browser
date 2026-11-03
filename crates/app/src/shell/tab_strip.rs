@@ -99,6 +99,8 @@ fn layout_for(panel: &Panel, entries: &[tabs::StripEntry]) -> StripLayout {
         TAB_MIN_WIDTH,
         TAB_MAX_WIDTH,
         TAB_SPACING,
+        // No hidden-tab count yet: the labels keep the whole strip.
+        0,
     )
 }
 

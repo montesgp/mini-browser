@@ -58,7 +58,7 @@ pub fn run(command: Command) {
         Command::CloseTab => tabs::close_active(),
         Command::NextTab => tabs::activate_next(),
         Command::PreviousTab => tabs::activate_previous(),
-        Command::ToggleTabStrip => tab_strip::toggle(),
+        Command::ToggleTopBar => tab_strip::toggle(),
         Command::Back => tabs::with_active_browser(|browser| browser.go_back()),
         Command::Forward => tabs::with_active_browser(|browser| browser.go_forward()),
         Command::Reload => tabs::with_active_browser(|browser| browser.reload()),
