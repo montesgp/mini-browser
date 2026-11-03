@@ -14,7 +14,7 @@ After the owner's local test of the top bar: hide the bar once a tab is chosen, 
 
 ## Tasks
 
-- [ ] T1 — S1, S2: auto-hide on tab click, close `×` and middle click — worker — commit: —
+- [x] T1 — S1, S2: auto-hide on tab click, close `×` and middle click — worker — commit: feat(app) close tabs (core dismiss: 4 tests RED→GREEN, 116 total; Windows: click hides in Auto, stays in Pinned, × closes inactive/active/last tab)
 - [ ] T2 — S3, S4, S5, S6: `mini://home` page, command bridge, Back to home — worker — commit: —
 - [ ] T3 — S1–S6: independent verify on Windows incl. security of the bridge — verify — evidence: —
 - [ ] T4 — S7: re-record `docs/demo.gif`, README — inline — commit: —
@@ -25,3 +25,4 @@ After the owner's local test of the top bar: hide the bar once a tab is chosen, 
 - L1 (user, original request): "Haria algun cambio. Si se selecciona una pestania, automaticamente ocultamos la barra de pestanas asi queda la web completa sin barra. Ademas, no tenemos posibilidad de cerrar pestanias, deberia existir. Y lo otro es mejorar el inicio de landing de la herramienta, el shortcut helper queda medio feo de esa manera podemos quiza hacerlo tipo similar a este style: C:\Users\patri\AppData\Local\Temp\gpaUHUPG\pi-clipboard-3f7b8d6a-e93d-4b25-9af4-f5c5c28fd18a.png Ademas si mejoramos eso debemos actualizar la animation de readme. Quiza agregaria un icon o pequenio en la home desplegable con los comandos para que el usuario pueda inspeccionarlos todos de una o dispararlos desde mouse ejemplo padding y demas acciones. En un caso navegue una page, y al realizar click derecho -> back apareci en una vista completamente negra sin saber que hacer (con comando ctrl + l) aparece el buscador pero para usuarios no tecnicos se les complica y parece que se rompio algo en la app. Intentemos definir ese back con mouse si nos lleva a la home de la app que es la home o que hacemos"
 - L2 (user decisions): home built as "Página interna HTML (Recomendado)"; tab click hides the bar "Solo en Auto (Recomendado)".
 - L3 (context): the reference image is a light card ("default keys") with rows `n` → "New window", `i or Enter` → "Enter terminal mode", `Ctrl+B then Esc` → "Back to window mode", `t` → "Toggle tiling", `Ctrl+P` → "Command palette", `Ctrl+B then d` → "Detach, keep running", `?` → "Help", and an italic footer "You can never learn enough"; monospace key caps with 1 px rounded borders, action labels right-aligned in a sans font. Our version is dark to match the app.
+- L4 (evidence, T1): CEF Views gives no mouse-button flags to ButtonDelegate::on_button_pressed and has no mouse hooks on views, and its buttons react only to the left button, so middle click cannot close a tab; only the `×` does. Noted in README.
