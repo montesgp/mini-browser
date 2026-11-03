@@ -41,6 +41,20 @@ pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Opt
     window_create_top_level(Some(&mut delegate));
 }
 
+/// Shows the window in front of the others, restored if it was minimized.
+pub fn bring_to_front() {
+    let Some(window) = FRAME.with_borrow(|frame| frame.as_ref().map(|frame| frame.window.clone()))
+    else {
+        return;
+    };
+    if window.is_minimized() == 1 {
+        window.restore();
+    }
+    window.show();
+    window.activate();
+    window.bring_to_top();
+}
+
 /// Changes the width of the padding frame and lays the window out again.
 pub fn set_padding(padding: u32) {
     let Some((window, mut content)) = FRAME.with_borrow_mut(|frame| {

@@ -18,9 +18,27 @@ unsafe extern "C" fn RunWinMain(
 
     let main_args = MainArgs { instance };
     let args = args::Args::from(main_args);
-    let Some(cmd_line) = args.as_cmd_line() else {
+    // cef-rs rebuilds the Windows command line by joining `env::args()` with spaces, which
+    // drops the quotes around arguments such as `--url "rust cef"`. Parse the original
+    // command line instead.
+    let Some(cmd_line) = command_line_create() else {
         return 1;
     };
+    cmd_line.init_from_string(Some(&CefString::from(original_command_line().as_str())));
 
     shell::run_main(args.as_main_args(), &cmd_line, sandbox_info)
+}
+
+/// The process command line exactly as Windows received it, quotes included.
+fn original_command_line() -> String {
+    // SAFETY: `GetCommandLineW` returns a pointer to the process's NUL-terminated command
+    // line, valid for the life of the process.
+    unsafe {
+        let start = windows_sys::Win32::System::Environment::GetCommandLineW();
+        let mut len = 0;
+        while *start.add(len) != 0 {
+            len += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(start, len))
+    }
 }

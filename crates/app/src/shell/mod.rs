@@ -67,8 +67,7 @@ pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut
 
     // Read now: CEF clears the browser process's global command line on `initialize`, because
     // `command_line_args_disabled` is set below.
-    let url_input =
-        CefString::from(&cmd_line.switch_value(Some(&CefString::from("url")))).to_string();
+    let url_input = app::url_input(cmd_line);
     let mut app = app::MiniApp::new(root_cache_path.clone(), url_input);
     let settings = Settings {
         no_sandbox: (!cfg!(feature = "sandbox")).into(),
@@ -88,6 +87,12 @@ pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut
         sandbox_info,
     ) != 1
     {
+        // The app already runs with this profile: CEF handed this launch to it
+        // (`on_already_running_app_relaunch`), so this process is done.
+        let notified = sys::cef_resultcode_t::CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED as i32;
+        if get_exit_code() == notified {
+            return 0;
+        }
         eprintln!("CEF failed to initialize");
         return 1;
     }
