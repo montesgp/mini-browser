@@ -39,6 +39,9 @@ thread_local! {
 pub fn create(padding: u32) -> Option<Panel> {
     BAND_HEIGHT.set(i32::try_from(padding).unwrap_or(0));
     let band = panel_create(Some(&mut BandDelegate::new()))?;
+    // CEF lays out a 0 px view at its default size, so a band with no height is hidden instead
+    // (a maximized window has no frame).
+    band.set_visible((padding > 0).into());
     let line = panel_create(Some(&mut DarkPanelDelegate::new(LINE_COLOR, LINE_HEIGHT)))?;
     line.set_visible(0);
     band.add_child_view(Some(&mut View::from(&line)));
@@ -60,6 +63,7 @@ pub fn destroy() {
 pub fn set_height(padding: u32) {
     BAND_HEIGHT.set(i32::try_from(padding).unwrap_or(0));
     if let Some(band) = LOADING_LINE.with_borrow(|state| state.as_ref().map(|s| s.band.clone())) {
+        band.set_visible((padding > 0).into());
         band.invalidate_layout();
     }
 }

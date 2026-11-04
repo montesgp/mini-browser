@@ -2,7 +2,8 @@
 //! auto-mode bar; the `×` of the active tab and of the hovered tab closes that tab; dragging the
 //! rest of the strip moves the window. Tabs share the strip's width evenly and long titles end in
 //! an ellipsis; when there are more tabs than fit, the strip shows the ones around the active tab
-//! followed by how many are hidden (`+3`). Views reports no middle clicks to button delegates
+//! followed by how many are hidden (`+3`). A `+` button right after the last shown tab opens a
+//! new tab. Views reports no middle clicks to button delegates
 //! (`on_button_pressed` has no event flags, and buttons only react to the left button), so a
 //! middle click does not close a tab.
 
@@ -35,6 +36,11 @@ const CLOSE_GLYPH: &str = "\u{00D7}";
 const CLOSE_FONT: &str = "Segoe UI, Helvetica, Arial, 15px";
 /// Width of the hidden-tab count that follows the labels.
 const HIDDEN_COUNT_WIDTH: i32 = 36;
+/// Width of the new-tab button that follows the labels.
+const NEW_TAB_WIDTH: i32 = 28;
+const NEW_TAB_GLYPH: &str = "+";
+const NEW_TAB_FONT: &str = "Segoe UI, Helvetica, Arial, 17px";
+const NEW_TAB_HOVER_COLOR: u32 = 0xFF2E_2E2E;
 const FONT: &str = "Segoe UI, Helvetica, Arial, 13px";
 
 /// One shown tab: a panel holding its title and its close button.
@@ -79,7 +85,7 @@ pub fn panel() -> Option<Panel> {
     STRIP.with_borrow(Clone::clone)
 }
 
-/// Where the labels and the hidden-tab count end, in strip coordinates.
+/// Where the labels, the new-tab button and the hidden-tab count end, in strip coordinates.
 pub fn labels_end() -> i32 {
     let Some(panel) = panel() else {
         return 0;
@@ -102,6 +108,7 @@ fn layout_for(panel: &Panel, entries: &[tabs::StripEntry]) -> StripLayout {
         TAB_MAX_WIDTH,
         TAB_SPACING,
         HIDDEN_COUNT_WIDTH,
+        NEW_TAB_WIDTH,
     )
 }
 
@@ -134,6 +141,7 @@ pub fn refresh() {
         panel.add_child_view(Some(&mut View::from(&tab.panel)));
         buttons.push(tab);
     }
+    add_new_tab_button(&panel);
     if layout.hidden > 0 {
         add_hidden_count(&panel, layout.hidden);
     }
@@ -237,7 +245,10 @@ fn update_close(tab: TabId) {
 }
 
 fn lit(button: &LabelButton) -> bool {
-    let state = button.state();
+    lit_state(button.state())
+}
+
+fn lit_state(state: ButtonState) -> bool {
     state == ButtonState::HOVERED || state == ButtonState::PRESSED
 }
 
@@ -246,6 +257,26 @@ fn lit(button: &LabelButton) -> bool {
 fn update_close_later(tab: TabId) {
     let mut task = UpdateClose::new(tab);
     post_task(ThreadId::UI, Some(&mut task));
+}
+
+/// Adds the `+` button that opens a new tab, like `Ctrl/Cmd+T`.
+fn add_new_tab_button(panel: &Panel) {
+    let Some(button) = label_button_create(
+        Some(&mut NewTabDelegate::new()),
+        Some(&CefString::from(NEW_TAB_GLYPH)),
+    ) else {
+        return;
+    };
+    style_button(&button, NEW_TAB_FONT, STRIP_COLOR, TAB_TEXT_COLOR);
+    let size = Size {
+        width: NEW_TAB_WIDTH,
+        height: STRIP_HEIGHT,
+    };
+    button.set_minimum_size(Some(&size));
+    button.set_maximum_size(Some(&size));
+    button.set_tooltip_text(Some(&CefString::from("New tab")));
+    button.set_accessible_name(Some(&CefString::from("New tab")));
+    panel.add_child_view(Some(&mut View::from(&button)));
 }
 
 /// Adds the `+N` count of tabs that do not fit, as plain text.
@@ -341,9 +372,7 @@ wrap_button_delegate! {
 
         fn on_button_state_changed(&self, button: Option<&mut Button>) {
             if let Some(button) = button {
-                let state = button.state();
-                let lit = state == ButtonState::HOVERED || state == ButtonState::PRESSED;
-                let color = if lit {
+                let color = if lit_state(button.state()) {
                     CLOSE_HOVER_COLOR
                 } else {
                     colors(self.active).0
@@ -351,6 +380,44 @@ wrap_button_delegate! {
                 button.set_background_color(color);
             }
             update_close_later(self.tab);
+        }
+    }
+}
+
+wrap_button_delegate! {
+    struct NewTabDelegate {}
+
+    impl ViewDelegate {
+        fn on_theme_changed(&self, view: Option<&mut View>) {
+            // Theme changes reset the background; reapply the strip color.
+            if let Some(view) = view {
+                view.set_background_color(STRIP_COLOR);
+            }
+        }
+    }
+
+    impl ButtonDelegate {
+        fn on_button_pressed(&self, _button: Option<&mut Button>) {
+            // Opening a tab rebuilds the strip, which destroys this button: do it after the press.
+            let mut task = OpenTab::new();
+            post_task(ThreadId::UI, Some(&mut task));
+        }
+
+        fn on_button_state_changed(&self, button: Option<&mut Button>) {
+            if let Some(button) = button {
+                let lit = lit_state(button.state());
+                button.set_background_color(if lit { NEW_TAB_HOVER_COLOR } else { STRIP_COLOR });
+            }
+        }
+    }
+}
+
+wrap_task! {
+    struct OpenTab;
+
+    impl Task {
+        fn execute(&self) {
+            tabs::open_tab(None);
         }
     }
 }

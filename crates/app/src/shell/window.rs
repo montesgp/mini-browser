@@ -33,7 +33,10 @@ const INITIAL_SIZE: Size = Size {
 struct Frame {
     window: Window,
     content: View,
+    /// The saved width of the frame.
     padding: u32,
+    /// The width the frame has now: the saved one, or none while the window is maximized.
+    inset: u32,
 }
 
 thread_local! {
@@ -62,25 +65,78 @@ pub fn bring_to_front() {
     window.bring_to_top();
 }
 
-/// The width of the padding frame.
+/// The width the padding frame has now (none while the window is maximized).
 pub fn padding() -> u32 {
-    FRAME.with_borrow(|frame| frame.as_ref().map_or(0, |frame| frame.padding))
+    FRAME.with_borrow(|frame| frame.as_ref().map_or(0, |frame| frame.inset))
 }
 
-/// Changes the width of the padding frame and lays the window out again.
+/// Changes the saved width of the padding frame and lays the window out again.
 pub fn set_padding(padding: u32) {
-    let Some((window, mut content)) = FRAME.with_borrow_mut(|frame| {
-        frame.as_mut().map(|frame| {
+    FRAME.with_borrow_mut(|frame| {
+        if let Some(frame) = frame.as_mut() {
             frame.padding = padding;
-            (frame.window.clone(), frame.content.clone())
-        })
+        }
+    });
+    fit_frame();
+}
+
+/// Where the window's views start on the screen, see [`layout::view_origin`]. A maximized
+/// frameless window on Windows is larger than its screen and its views start inside it, so
+/// they are measured from a child view (`convert_point_from_screen` leaves points unchanged
+/// for the window itself); a restored window's views start at its bounds.
+pub fn origin_in_screen(window: &Window) -> Point {
+    let bounds = window.bounds_in_screen();
+    let child = window.child_view_at(0).and_then(|child| {
+        let place = child.bounds();
+        let mut point = Point { x: 0, y: 0 };
+        (child.convert_point_to_screen(Some(&mut point)) == 1)
+            .then_some((point.x - place.x, point.y - place.y))
+    });
+    let (x, y) = layout::view_origin(window.is_maximized() == 1, (bounds.x, bounds.y), child);
+    Point { x, y }
+}
+
+/// How far the window's views reach past the top of its screen's work area. 0 when they fit.
+pub fn overhang(window: &Window) -> i32 {
+    window.display().map_or(0, |display| {
+        display.work_area().y - origin_in_screen(window).y
+    })
+}
+
+/// Gives the frame the width it has for the window's state: the saved one while the window is
+/// restored, none while it is maximized. Call it whenever the window's bounds change.
+fn fit_frame() {
+    let Some((window, mut content, inset)) = FRAME.with_borrow_mut(|frame| {
+        let frame = frame.as_mut()?;
+        let maximized = frame.window.is_maximized() == 1;
+        let overhang = if maximized {
+            overhang(&frame.window)
+        } else {
+            0
+        };
+        let inset = layout::frame_padding(frame.padding, maximized, overhang);
+        if inset == frame.inset {
+            return None;
+        }
+        frame.inset = inset;
+        Some((frame.window.clone(), frame.content.clone(), inset))
     }) else {
         return;
     };
-    loading_line::set_height(padding);
-    apply_layout(&window, &mut content, padding);
+    loading_line::set_height(inset);
+    apply_layout(&window, &mut content, inset);
     window.layout();
     update_drag_regions();
+}
+
+wrap_task! {
+    struct FitFrame;
+
+    impl Task {
+        fn execute(&self) {
+            fit_frame();
+        }
+    }
 }
 
 /// Sets the window's layout: `content` inset by `padding` and stretched over the rest.
@@ -96,7 +152,7 @@ pub fn update_drag_regions() {
     let Some((window, padding)) = FRAME.with_borrow(|frame| {
         frame
             .as_ref()
-            .map(|frame| (frame.window.clone(), frame.padding))
+            .map(|frame| (frame.window.clone(), frame.inset))
     }) else {
         return;
     };
@@ -245,6 +301,13 @@ wrap_window_delegate! {
     impl PanelDelegate {}
 
     impl WindowDelegate {
+        fn on_window_bounds_changed(&self, _window: Option<&mut Window>, _new_bounds: Option<&Rect>) {
+            // Maximizing or restoring the window hides or shows the frame; lay the window out
+            // once CEF is done with the bounds change.
+            let mut task = FitFrame::new();
+            post_task(ThreadId::UI, Some(&mut task));
+        }
+
         fn on_window_created(&self, window: Option<&mut Window>) {
             let Some(window) = window else {
                 return;
@@ -278,6 +341,7 @@ wrap_window_delegate! {
                 window: window.clone(),
                 content: container_view,
                 padding: self.settings.padding,
+                inset: self.settings.padding,
             }));
             // Added last so they stay above the other views.
             address_box::create(window, &self.settings.search_template);
@@ -301,7 +365,9 @@ wrap_window_delegate! {
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
             // Allow the window to close once every tab's browser says it's OK. Ask all of them,
-            // so each one starts closing.
+            // so each one starts closing; the last one closes the window instead of returning
+            // home.
+            tabs::start_quitting();
             let ready = tabs::browsers().iter().fold(true, |ready, browser| {
                 let closed = browser.host().is_none_or(|host| host.try_close_browser() == 1);
                 ready && closed

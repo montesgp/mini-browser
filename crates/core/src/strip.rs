@@ -16,6 +16,8 @@ pub struct StripLayout {
 /// and the window of shown labels always contains `active`: the leftmost labels while the
 /// active tab is among them, else the labels ending at the active one. When some tabs are
 /// hidden, an indicator `indicator_width` pixels wide (plus `spacing`) follows the labels.
+/// A new-tab button `button_width` pixels wide (plus `spacing`) always follows them.
+#[allow(clippy::too_many_arguments)]
 pub fn strip_layout(
     available: i32,
     tabs: usize,
@@ -24,6 +26,7 @@ pub fn strip_layout(
     max_width: i32,
     spacing: i32,
     indicator_width: i32,
+    button_width: i32,
 ) -> StripLayout {
     if tabs == 0 {
         return StripLayout {
@@ -34,8 +37,12 @@ pub fn strip_layout(
         };
     }
     let fit = |width: i32| usize::try_from((width + spacing) / (min_width + spacing)).unwrap_or(0);
+    let mut available = if button_width > 0 {
+        available - button_width - spacing
+    } else {
+        available
+    };
     let mut fitting = fit(available);
-    let mut available = available;
     if fitting < tabs && indicator_width > 0 {
         available -= indicator_width + spacing;
         fitting = fit(available);
@@ -65,11 +72,17 @@ mod tests {
     const INDICATOR: i32 = 36;
 
     fn layout(available: i32, tabs: usize, active: usize) -> StripLayout {
-        strip_layout(available, tabs, active, MIN, MAX, GAP, 0)
+        strip_layout(available, tabs, active, MIN, MAX, GAP, 0, 0)
     }
 
     fn with_indicator(available: i32, tabs: usize, active: usize) -> StripLayout {
-        strip_layout(available, tabs, active, MIN, MAX, GAP, INDICATOR)
+        strip_layout(available, tabs, active, MIN, MAX, GAP, INDICATOR, 0)
+    }
+
+    const BUTTON: i32 = 28;
+
+    fn with_button(available: i32, tabs: usize, active: usize) -> StripLayout {
+        strip_layout(available, tabs, active, MIN, MAX, GAP, INDICATOR, BUTTON)
     }
 
     fn shown(first: usize, count: usize, tab_width: i32) -> StripLayout {
@@ -168,6 +181,41 @@ mod tests {
         }
         assert_eq!(
             with_indicator(30, 5, 3),
+            StripLayout {
+                hidden: 4,
+                ..shown(3, 1, MIN)
+            }
+        );
+    }
+
+    #[test]
+    fn the_new_tab_button_always_takes_room() {
+        // Few tabs keep the maximum width.
+        assert_eq!(with_button(1264, 3, 0), shown(0, 3, MAX));
+        // 8 tabs: the button and its gap leave 915 px, (915 - 7) / 8 = 113.
+        assert_eq!(with_button(944, 8, 7), shown(0, 8, 113));
+        // 12 tabs fit 980 px alone, but not next to the button: 11 labels and the count.
+        assert_eq!(layout(980, 12, 0).count, 12);
+        let strip = with_button(980, 12, 0);
+        assert_eq!((strip.count, strip.hidden), (11, 1));
+        assert!(strip.tab_width * 11 + GAP * 10 + GAP + INDICATOR + GAP + BUTTON <= 980);
+    }
+
+    #[test]
+    fn the_new_tab_button_never_hides_the_active_tab() {
+        for active in 0..20 {
+            let strip = with_button(400, 20, active);
+            assert!((strip.first..strip.first + strip.count).contains(&active));
+            assert_eq!(strip.hidden, 20 - strip.count);
+            let count = i32::try_from(strip.count).unwrap();
+            let used = strip.tab_width * count + GAP * count + INDICATOR + GAP + BUTTON;
+            assert!(
+                used <= 400 || strip.count == 1,
+                "{strip:?} overflows: {used} px"
+            );
+        }
+        assert_eq!(
+            with_button(30, 5, 3),
             StripLayout {
                 hidden: 4,
                 ..shown(3, 1, MIN)

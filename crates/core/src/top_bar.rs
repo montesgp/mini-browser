@@ -1,8 +1,9 @@
-//! When the top bar shows. Pinned, always. In auto mode, while the pointer is at the top edge of
-//! the window or over the shown bar, for a moment after it leaves, and for a moment after the
-//! tabs change. Choosing a tab in the auto-mode bar hides it at once, and it stays hidden until
-//! the pointer leaves the bar's area and comes back, or the tabs change again. The caller passes
-//! the current time, so the clock is under its control.
+//! When the top bar shows. Pinned, always. In auto mode, while the pointer is over the bar's
+//! area (the frame's top side and the bar's height, across the window), for a moment after it
+//! leaves, and for a moment after the tabs change. The shown bar pushes the page down, so the
+//! area that reveals it is the area it then covers. Choosing a tab in the auto-mode bar hides it
+//! at once, and it stays hidden until the pointer leaves the bar's area and comes back, or the
+//! tabs change again. The caller passes the current time, so the clock is under its control.
 
 use std::time::{Duration, Instant};
 
@@ -12,7 +13,7 @@ use crate::settings::TopBarMode;
 pub const HIDE_DELAY: Duration = Duration::from_millis(500);
 /// How long the bar shows after the tabs change.
 pub const FLASH: Duration = Duration::from_millis(1500);
-/// The smallest band at the top of the window that reveals the bar, for thin padding frames.
+/// The smallest band at the top of the window that reveals the bar.
 pub const REVEAL_MIN: i32 = 6;
 
 /// Where the pointer is, relative to the top bar.
@@ -20,17 +21,16 @@ pub const REVEAL_MIN: i32 = 6;
 pub enum Pointer {
     /// Outside the window, below the bar's area, or unknown.
     Away,
-    /// At the top edge of the window, which reveals the bar.
-    Edge,
-    /// Over the bar's area below the top edge, which keeps a shown bar but does not reveal it.
+    /// Over the bar's area, which reveals the bar and keeps it shown.
     Bar,
 }
 
 /// Where `point` (window coordinates; `None` when the pointer is not over the window) is in a
 /// window `width` pixels wide whose padding frame is `padding` pixels and whose bar, right
-/// below the frame's top side, is `bar_height` pixels tall. The top edge is the frame's top
-/// side, at least [`REVEAL_MIN`] pixels. When the screen cuts off the top `cut` pixels of the
-/// window (a maximized window on Windows), the top edge is measured from the screen's edge.
+/// below the frame's top side, is `bar_height` pixels tall. The bar's area is the frame's top
+/// side and the bar, and at least [`REVEAL_MIN`] pixels. When the screen cuts off the top `cut`
+/// pixels of the window (a maximized window on Windows), that band is measured from the
+/// screen's edge.
 pub fn pointer_zone(
     point: Option<(i32, i32)>,
     width: i32,
@@ -41,9 +41,7 @@ pub fn pointer_zone(
     let Some((_, y)) = point.filter(|&(x, y)| (0..width).contains(&x) && y >= 0) else {
         return Pointer::Away;
     };
-    if y < padding.max(cut.max(0) + REVEAL_MIN) {
-        Pointer::Edge
-    } else if y < padding + bar_height {
+    if y < (padding + bar_height).max(cut.max(0) + REVEAL_MIN) {
         Pointer::Bar
     } else {
         Pointer::Away
@@ -83,12 +81,7 @@ impl TopBar {
             self.dismissed = pointer != Pointer::Away;
             return false;
         }
-        let hovered = match pointer {
-            Pointer::Edge => true,
-            Pointer::Bar => self.is_shown(now),
-            Pointer::Away => false,
-        };
-        if hovered {
+        if pointer == Pointer::Bar {
             self.show_until(now + HIDE_DELAY);
         }
         self.is_shown(now)
@@ -112,17 +105,23 @@ mod tests {
     }
 
     #[test]
-    fn the_top_edge_is_the_frames_top_side() {
-        assert_eq!(pointer_zone(Some((0, 0)), 1280, 0, 8, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((640, 7)), 1280, 0, 8, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((1279, 7)), 1280, 0, 8, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((640, 8)), 1280, 0, 8, 28), Pointer::Bar);
+    fn the_whole_bar_area_reveals_the_bar() {
+        // The frame's top side and the bar below it, across the window's width.
+        for (x, y) in [(0, 0), (640, 7), (640, 8), (640, 20), (1279, 35)] {
+            assert_eq!(
+                pointer_zone(Some((x, y)), 1280, 0, 8, 28),
+                Pointer::Bar,
+                "({x}, {y})"
+            );
+        }
     }
 
     #[test]
     fn a_thin_frame_still_has_a_reachable_top_edge() {
-        assert_eq!(pointer_zone(Some((640, 5)), 1280, 0, 4, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((640, 6)), 1280, 0, 4, 28), Pointer::Bar);
+        assert_eq!(pointer_zone(Some((640, 31)), 1280, 0, 4, 28), Pointer::Bar);
+        assert_eq!(pointer_zone(Some((640, 32)), 1280, 0, 4, 28), Pointer::Away);
+        assert_eq!(pointer_zone(Some((640, 5)), 1280, 0, 0, 0), Pointer::Bar);
+        assert_eq!(pointer_zone(Some((640, 6)), 1280, 0, 0, 0), Pointer::Away);
     }
 
     #[test]
@@ -138,18 +137,13 @@ mod tests {
     #[test]
     fn a_window_cut_off_by_the_screen_reveals_from_the_screens_edge() {
         // Maximized on Windows: the top 8 px are above the screen, so the pointer can only
-        // reach y = 8.
-        assert_eq!(pointer_zone(Some((640, 8)), 1280, 8, 8, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((640, 13)), 1280, 8, 8, 28), Pointer::Edge);
-        assert_eq!(pointer_zone(Some((640, 14)), 1280, 8, 8, 28), Pointer::Bar);
+        // reach y = 8, where the frame (as wide as the cut) ends and the bar starts.
+        assert_eq!(pointer_zone(Some((640, 8)), 1280, 8, 8, 28), Pointer::Bar);
         assert_eq!(pointer_zone(Some((640, 35)), 1280, 8, 8, 28), Pointer::Bar);
         assert_eq!(pointer_zone(Some((640, 36)), 1280, 8, 8, 28), Pointer::Away);
-        // A wide frame keeps its whole visible top side as the edge.
-        assert_eq!(
-            pointer_zone(Some((640, 19)), 1280, 8, 20, 28),
-            Pointer::Edge
-        );
-        assert_eq!(pointer_zone(Some((640, 20)), 1280, 8, 20, 28), Pointer::Bar);
+        // Without a frame or a bar, a thin band below the screen's edge still reveals it.
+        assert_eq!(pointer_zone(Some((640, 13)), 1280, 8, 0, 0), Pointer::Bar);
+        assert_eq!(pointer_zone(Some((640, 14)), 1280, 8, 0, 0), Pointer::Away);
     }
 
     #[test]
@@ -164,7 +158,7 @@ mod tests {
     fn a_pinned_bar_always_shows() {
         let now = Instant::now();
         let mut bar = TopBar::default();
-        for pointer in [Pointer::Away, Pointer::Edge, Pointer::Bar] {
+        for pointer in [Pointer::Away, Pointer::Bar] {
             assert!(bar.update(TopBarMode::Pinned, pointer, now), "{pointer:?}");
         }
     }
@@ -177,10 +171,10 @@ mod tests {
     }
 
     #[test]
-    fn the_top_edge_reveals_the_bar_and_it_hides_after_the_pointer_leaves() {
+    fn the_bar_area_reveals_the_bar_and_it_hides_after_the_pointer_leaves() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         assert!(bar.update(TopBarMode::Auto, Pointer::Away, start + ms(100)));
         assert!(bar.update(TopBarMode::Auto, Pointer::Away, start + ms(499)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(500)));
@@ -190,7 +184,7 @@ mod tests {
     fn the_pointer_over_the_shown_bar_keeps_it() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         for step in 1..=20 {
             let now = start + ms(step * 400);
             assert!(bar.update(TopBarMode::Auto, Pointer::Bar, now), "{step}");
@@ -201,11 +195,11 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_area_does_not_reveal_a_hidden_bar() {
+    fn the_bar_area_reveals_a_hidden_bar() {
         let now = Instant::now();
         let mut bar = TopBar::default();
-        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, now));
-        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, now + ms(100)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, now));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, now + ms(100)));
     }
 
     #[test]
@@ -244,7 +238,7 @@ mod tests {
         let start = Instant::now();
         let mut bar = TopBar::default();
         bar.flash(start);
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(100)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         assert!(bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1499)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(1500)));
     }
@@ -253,12 +247,12 @@ mod tests {
     fn dismissing_hides_the_bar_at_once_with_the_pointer_still_on_it() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         bar.dismiss(TopBarMode::Auto);
         assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(200)));
-        assert!(!bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(300)));
+        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(300)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(5000)));
     }
 
@@ -266,19 +260,18 @@ mod tests {
     fn a_dismissed_bar_shows_again_once_the_pointer_leaves_and_comes_back() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         bar.dismiss(TopBarMode::Auto);
         assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Away, start + ms(200)));
-        assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(300)));
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(400)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(300)));
     }
 
     #[test]
     fn dismissing_cuts_the_flash_of_the_tab_change_short() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         // Choosing a tab changes the tabs, which flashes the bar, and then dismisses it.
         bar.flash(start + ms(100));
         bar.dismiss(TopBarMode::Auto);
@@ -290,7 +283,7 @@ mod tests {
     fn a_later_flash_shows_a_dismissed_bar() {
         let start = Instant::now();
         let mut bar = TopBar::default();
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start));
         bar.dismiss(TopBarMode::Auto);
         assert!(!bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         // A tab change from the keyboard.
@@ -305,7 +298,7 @@ mod tests {
         let mut bar = TopBar::default();
         bar.dismiss(TopBarMode::Pinned);
         assert!(bar.update(TopBarMode::Pinned, Pointer::Bar, start));
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, start + ms(100)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(100)));
         assert!(bar.update(TopBarMode::Auto, Pointer::Bar, start + ms(200)));
     }
 
@@ -315,6 +308,6 @@ mod tests {
         let mut bar = TopBar::default();
         assert!(bar.update(TopBarMode::Pinned, Pointer::Away, now));
         assert!(!bar.update(TopBarMode::Auto, Pointer::Away, now + ms(1)));
-        assert!(bar.update(TopBarMode::Auto, Pointer::Edge, now + ms(2)));
+        assert!(bar.update(TopBarMode::Auto, Pointer::Bar, now + ms(2)));
     }
 }
