@@ -186,11 +186,21 @@ pub fn activate_previous() {
 
 /// Asks the active tab's browser to close; [`close_tab_for`] completes the close.
 pub fn close_active() {
-    with_active_browser(|browser| {
-        if let Some(host) = browser.host() {
-            host.close_browser(0);
-        }
-    });
+    with_active_browser(close_browser);
+}
+
+/// Asks the browser of tab `id` to close, like [`close_active`].
+pub fn close(id: TabId) {
+    let browser = with_shell(|shell| shell.view(id).and_then(BrowserView::browser)).flatten();
+    if let Some(browser) = browser {
+        close_browser(&browser);
+    }
+}
+
+fn close_browser(browser: &Browser) {
+    if let Some(host) = browser.host() {
+        host.close_browser(0);
+    }
 }
 
 /// Called when `browser` is ready to close. Unless it is the last tab, removes its tab and

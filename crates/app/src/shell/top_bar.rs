@@ -2,8 +2,9 @@
 //! minimize, maximize/restore and close buttons (right-aligned, or left-aligned on macOS).
 //! Pinned, it always shows and the page sits below it. In auto mode it is an overlay that shows
 //! while the pointer is at the top edge of the window or over the bar, and briefly when the
-//! tabs change; hidden, nothing of it shows. A timer checks the pointer, because Views reports
-//! no pointer moves over the page. The rules live in `mini_core::top_bar`.
+//! tabs change; choosing a tab hides it at once. Hidden, nothing of it shows. A timer checks the
+//! pointer, because Views reports no pointer moves over the page. The rules live in
+//! `mini_core::top_bar`.
 
 use std::{cell::RefCell, time::Instant};
 
@@ -209,6 +210,18 @@ pub fn tabs_changed() {
         Some(())
     });
     if flashed.is_some() {
+        update();
+    }
+}
+
+/// Hides the auto-mode bar at once; call it after the user chose a tab in it.
+pub fn tab_chosen() {
+    let dismissed = BAR.with_borrow_mut(|bar| {
+        let bar = bar.as_mut()?;
+        bar.state.dismiss(bar.mode);
+        Some(())
+    });
+    if dismissed.is_some() {
         update();
     }
 }
