@@ -15,8 +15,8 @@ After the owner's local test of the top bar: hide the bar once a tab is chosen, 
 ## Tasks
 
 - [x] T1 — S1, S2: auto-hide on tab click, close `×` and middle click — worker — commit: feat(app) close tabs (core dismiss: 4 tests RED→GREEN, 116 total; Windows: click hides in Auto, stays in Pinned, × closes inactive/active/last tab)
-- [ ] T2 — S3, S4, S5, S6: `mini://home` page, command bridge, Back to home — worker — commit: —
-- [ ] T3 — S1–S6: independent verify on Windows incl. security of the bridge — verify — evidence: —
+- [x] T2 — S3, S4, S5, S6: `mini://home` page, command bridge, Back to home — worker — commits: 843232f (core routes/allow-list/state, RED→GREEN), a93a667 (app, page, scheme, bridge), F1 fix (redirects into mini: cancelled, exact is_home_url, 404 for non-fetch cmd/state)
+- [x] T3 — S1–S6: independent verify on Windows incl. security of the bridge — verify — evidence: L5
 - [ ] T4 — S7: re-record `docs/demo.gif`, README — inline — commit: —
 - [ ] T5 — PRs (auto-merge only on the main-based PR), ci-gate, merge — inline — merge: —
 
@@ -26,3 +26,4 @@ After the owner's local test of the top bar: hide the bar once a tab is chosen, 
 - L2 (user decisions): home built as "Página interna HTML (Recomendado)"; tab click hides the bar "Solo en Auto (Recomendado)".
 - L3 (context): the reference image is a light card ("default keys") with rows `n` → "New window", `i or Enter` → "Enter terminal mode", `Ctrl+B then Esc` → "Back to window mode", `t` → "Toggle tiling", `Ctrl+P` → "Command palette", `Ctrl+B then d` → "Detach, keep running", `?` → "Help", and an italic footer "You can never learn enough"; monospace key caps with 1 px rounded borders, action labels right-aligned in a sans font. Our version is dark to match the app.
 - L4 (evidence, T1): CEF Views gives no mouse-button flags to ButtonDelegate::on_button_pressed and has no mouse hooks on views, and its buttons react only to the left button, so middle click cannot close a tab; only the `×` does. Noted in README.
+- L5 (evidence, independent verify on a93a667): S1–S6 PASS on Windows (home on first run and Ctrl+T, card rows run commands and persist, Back via Alt+Left / mouse back / context menu returns home, Ctrl+L on home focuses the field). Security: 30+ attack vectors from a local web page (fetch cors/no-cors, XHR, img/script/link/object/embed/iframe, forms, pushState, service worker, window.open, popups, location/meta refresh/anchor/form navigation, address box, home field, relaunch --url) ran no command and settings.json kept its hash. F1 (low): a server 302 into mini: loaded the home or a 403 page; fixed by cancelling redirects into mini: in on_before_browse (confirmed: redirect=1 app_scheme=true cancelled), exact is_home_url, 404 for non-fetch cmd/state. Not verified: macOS/Linux runtime, drag and drop of a mini: link.
