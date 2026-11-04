@@ -16,8 +16,8 @@ Second round of owner feedback from the local test of the top bar and home page:
 
 ## Tasks
 
-- [ ] T1 — S1–S6, S8, S9: bar, home card, last tab, maximized frame (tests for core logic, Windows functional checks; S7 verified unchanged) — worker — commit: —
-- [ ] T2 — S1–S9: independent verify on Windows — verify — evidence: —
+- [x] T1 — S1–S6, S8, S9: bar, home card, last tab, maximized frame (tests for core logic, Windows functional checks; S7 verified unchanged) — worker + inline — commit: feat(app) polish the top bar (core 133 tests; view_origin RED→GREEN)
+- [x] T2 — S1–S9: independent verify on Windows — verify — evidence: L5–L6
 - [ ] T3 — PR, ci-gate, merge — inline — merge: —
 
 ## Log
@@ -26,3 +26,5 @@ Second round of owner feedback from the local test of the top bar and home page:
 - L2 (evidence): screenshot 1 shows the Auto bar over a site's navbar (logo cut) and the `_` glyph sitting low; screenshot 2 is Chrome's `New Tab ×` followed by `+`. Measured on github.com (960x600 window, 96 DPI): dark frame 8 px left/right/top/bottom, window rect equals the DWM frame (no invisible border).
 - L3 (decisions): "Estándar: Alt+← atrás, Alt+→ adelante (Recomendado)"; "Sin marco al maximizar (Recomendado)". Pushing the page on Auto reveal means it shifts ~28 px each time the bar appears (accepted: it is what the owner asked and what Chrome does when its bar is visible).
 - L4 (carry-over): `odd/tasks/home-page.md` T4 (re-record `docs/demo.gif`) waits for the owner to leave the PC idle; record it after this polish so the GIF shows the final bar.
+- L5 (evidence): the writer's run crashed (infrastructure: "child exit unconfirmed; capacity quarantined") during its functional checks, leaving a compiling tree (131 core tests). An independent verify of that tree: S1, S2, S3, S5, S6, S7, S8 PASS; S4 FAIL (restored window not at the screen top: `origin_in_screen` used the child view origin (-8,0) instead of the window bounds, so the Auto bar never appeared); S9 left a 1 px top row when maximized; a debug `eprintln!` was left. Finished inline: `mini_core::layout::view_origin` (tests observed failing first), debug print removed, README/CHANGELOG.
+- L6 (evidence): re-verify: S4 PASS restored at y=500 and y=0 and maximized (pointer anywhere over the bar's area shows it; y below the area does not), S6 PASS, S3/S5/S8 PASS. The 1 px row came from the loading-line band asking 0 px (CEF lays 0 px views at a default size); hiding the band at 0 px fixed it: measured on github.com, restored 8/8/8/8 px, maximized 0/0/0/0 px, restored again 8/8/8/8 px. Known trade-off: no loading line while maximized (there is no frame to hold it).
