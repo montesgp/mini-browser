@@ -9,7 +9,7 @@ use mini_core::{
 
 use std::path::PathBuf;
 
-use super::{client::MiniClient, tabs, window};
+use super::{client::MiniClient, home, tabs, window};
 
 /// The `--url` input of `command_line` (`--url=<input>` or `--url <input>`), empty without one.
 pub fn url_input(command_line: &CommandLine) -> String {
@@ -48,6 +48,10 @@ wrap_app! {
                     );
                 }
             }
+        }
+
+        fn on_register_custom_schemes(&self, registrar: Option<&mut SchemeRegistrar>) {
+            crate::scheme::register(registrar);
         }
 
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
@@ -94,10 +98,11 @@ wrap_browser_process_handler! {
                 context.set_chrome_color_scheme(ColorVariant::DARK, 0);
             }
 
+            home::register_handler();
             let settings_path = self.data_dir.join(SETTINGS_FILE);
             let settings = Settings::load(&settings_path);
             // `--url=` is resolved like address-box input, so it only ever loads a web address
-            // or a search. `None` (no switch or an empty one) starts with an empty tab.
+            // or a search. `None` (no switch or an empty one) starts with the home page.
             let url = resolve_input(&self.url_input, &settings.search_template);
             window::open(MiniClient::new(), settings, settings_path, url);
         }

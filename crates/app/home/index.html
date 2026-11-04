@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>New tab</title>
+    <link rel="stylesheet" href="home.css">
+    <script src="home.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="bar">
+        <input id="address" type="text" placeholder="Enter URL or search…"
+          aria-label="Enter URL or search" autocomplete="off" spellcheck="false" autofocus>
+        <button id="toggle" class="icon" type="button" aria-controls="card"
+          aria-expanded="false" aria-label="Show shortcuts" title="Shortcuts">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none"
+              stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 13.5h1M17 13.5h1M9.5 13.5h5"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <section id="card" class="card" aria-labelledby="card-title" hidden>
+        <h2 id="card-title">shortcuts</h2>
+        <div id="rows"></div>
+        <p class="note">Press a row to run it</p>
+      </section>
+    </main>
+  </body>
+</html>

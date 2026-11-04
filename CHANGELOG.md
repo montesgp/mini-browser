@@ -11,10 +11,17 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 - Clicking a tab in the `Auto` top bar hides the bar at once, so the page is whole again; it shows again once the mouse leaves the top and comes back. A `Pinned` bar stays.
 - A small `×` on the current tab and on the tab under the mouse closes that tab, following the `Ctrl/Cmd+W` rules (closing the last tab closes the window).
 - A "Top bar" setting, `Auto` or `Pinned`, in the settings box (`Ctrl/Cmd+,`), saved in `settings.json` as `topBar`. `Pinned` keeps the bar visible with the page below it. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change.
+- A dark home page (`mini://home/`) in every new tab: a centered field to type an address or a search, and a keyboard button that opens a card with every shortcut. Click a row to run it: new tab, close tab, next or previous tab, back, forward, reload, top bar `Auto`/`Pinned`, padding `−`/`+`, quit. Only the app opens this page; web pages cannot link to it, frame it, redirect to it or ask it to run commands.
 
 ### Changed
 
+- New tabs open the home page instead of an empty tab with the address box; `Ctrl/Cmd+L` on the home page focuses its field. The faint `Ctrl+L to enter an address` hint is gone.
+
 - `Ctrl/Cmd+Shift+F` now switches the top bar between `Auto` and `Pinned` and remembers it; before, it showed or hid the tab strip until restart.
+
+### Fixed
+
+- Going back from the first page of a tab (`Alt+Left`, the mouse back button or the right-click menu) shows the home page; before, it showed an empty black page.
 
 ## [0.2.0] - 2026-11-03
 

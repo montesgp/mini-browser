@@ -7,7 +7,7 @@ use std::{
 };
 
 use cef::*;
-use mini_core::popups::PopupThrottle;
+use mini_core::{home, popups::PopupThrottle};
 
 use super::{commands, tabs, window};
 
@@ -44,6 +44,33 @@ wrap_client! {
 
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(MiniLoadHandler::new())
+        }
+
+        fn request_handler(&self) -> Option<RequestHandler> {
+            Some(MiniRequestHandler::new())
+        }
+    }
+}
+
+wrap_request_handler! {
+    struct MiniRequestHandler;
+
+    impl RequestHandler {
+        fn on_before_browse(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            request: Option<&mut Request>,
+            _user_gesture: i32,
+            is_redirect: i32,
+        ) -> i32 {
+            // Only the app opens `mini:` pages. Web pages cannot link to or frame them (the
+            // scheme is display-isolated), but a server's redirect is not checked against the
+            // page that started the navigation, so cancel any redirect into the scheme.
+            let into_app_scheme = request.is_some_and(|request| {
+                home::is_app_url(&CefString::from(&request.url()).to_string())
+            });
+            (is_redirect == 1 && into_app_scheme).into()
         }
     }
 }

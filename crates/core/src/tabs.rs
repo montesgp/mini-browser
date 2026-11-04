@@ -1,10 +1,12 @@
 //! Ordered tab list with one active tab. The shell maps each [`TabId`] to a browser view.
 
+use crate::home::is_home_url;
+
 /// Stable identifier of a tab for the lifetime of the window.
 pub type TabId = u64;
 
-/// Title shown for a tab that has neither a title nor a URL yet.
-pub const NEW_TAB_TITLE: &str = "New Tab";
+/// Title shown for a tab that has no title and no URL yet, or shows the home page.
+pub const NEW_TAB_TITLE: &str = "New tab";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tab {
@@ -13,28 +15,26 @@ pub struct Tab {
     pub url: String,
     /// Whether the tab's page is loading.
     pub loading: bool,
-    /// Opened by the user without an address and not navigated yet.
-    pub blank: bool,
 }
 
 impl Tab {
-    /// The page title, else the URL, else [`NEW_TAB_TITLE`].
+    /// Whether the tab shows the home page (`mini://home/`).
+    pub fn is_home(&self) -> bool {
+        is_home_url(&self.url)
+    }
+
+    /// The page title, else the URL (never the home page's), else [`NEW_TAB_TITLE`].
     pub fn display_title(&self) -> &str {
-        [self.title.as_str(), self.url.as_str()]
+        let url = if self.is_home() { "" } else { &self.url };
+        [self.title.as_str(), url]
             .into_iter()
             .find(|text| !text.is_empty())
             .unwrap_or(NEW_TAB_TITLE)
     }
 
-    /// Whether the tab shows the empty-tab hint: only blank tabs do.
-    pub fn shows_hint(&self) -> bool {
-        self.blank
-    }
-
-    /// Whether the tab shows the loading line: while it loads, except the blank page of a
-    /// blank tab.
+    /// Whether the tab shows the loading line: while it loads, except on the home page.
     pub fn shows_loading(&self) -> bool {
-        self.loading && !self.blank
+        self.loading && !self.is_home()
     }
 }
 
@@ -63,15 +63,6 @@ impl Tabs {
             },
         );
         self.active = Some(index);
-        id
-    }
-
-    /// Opens a blank tab (see [`Tab::blank`]) like [`Tabs::open`].
-    pub fn open_blank(&mut self) -> TabId {
-        let id = self.open();
-        if let Some(tab) = self.get_mut(id) {
-            tab.blank = true;
-        }
         id
     }
 
@@ -124,11 +115,10 @@ impl Tabs {
         }
     }
 
-    /// Updates a tab's URL; a non-empty URL ends a blank tab. Unknown ids are ignored.
+    /// Updates a tab's URL. Unknown ids are ignored.
     pub fn set_url(&mut self, id: TabId, url: &str) {
         if let Some(tab) = self.get_mut(id) {
             tab.url = url.to_owned();
-            tab.blank &= url.is_empty();
         }
     }
 
@@ -172,6 +162,7 @@ impl Tabs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::home::HOME_URL;
 
     fn ids(tabs: &Tabs) -> Vec<TabId> {
         tabs.iter().map(|tab| tab.id).collect()
@@ -313,22 +304,6 @@ mod tests {
     }
 
     #[test]
-    fn only_blank_tabs_show_the_hint_until_they_get_a_url() {
-        let mut tabs = Tabs::new();
-        let popup = tabs.open();
-        let blank = tabs.open_blank();
-        assert_eq!(active_id(&tabs), Some(blank));
-        assert!(!tabs.get(popup).unwrap().shows_hint());
-        assert!(tabs.get(blank).unwrap().shows_hint());
-        tabs.set_url(blank, "");
-        assert!(tabs.get(blank).unwrap().shows_hint());
-        tabs.set_url(blank, "https://github.com/");
-        assert!(!tabs.get(blank).unwrap().shows_hint());
-        tabs.set_url(blank, "");
-        assert!(!tabs.get(blank).unwrap().shows_hint());
-    }
-
-    #[test]
     fn loading_is_tracked_per_tab() {
         let (mut tabs, [a, b, c]) = three_with_middle_active();
         tabs.set_loading(a, true);
@@ -344,12 +319,34 @@ mod tests {
     }
 
     #[test]
-    fn a_blank_tab_loading_its_blank_page_shows_no_loading_line() {
+    fn the_home_page_is_titled_new_tab_until_it_names_itself() {
         let mut tabs = Tabs::new();
-        let blank = tabs.open_blank();
-        tabs.set_loading(blank, true);
-        assert!(!tabs.get(blank).unwrap().shows_loading());
-        tabs.set_url(blank, "https://github.com/");
-        assert!(tabs.get(blank).unwrap().shows_loading());
+        let home = tabs.open();
+        tabs.set_url(home, HOME_URL);
+        let tab = tabs.get(home).unwrap();
+        assert!(tab.is_home());
+        assert_eq!(tab.display_title(), "New tab");
+        tabs.set_title(home, "New tab");
+        assert_eq!(tabs.get(home).unwrap().display_title(), "New tab");
+        tabs.set_url(home, "https://github.com/");
+        tabs.set_title(home, "");
+        assert!(!tabs.get(home).unwrap().is_home());
+        assert_eq!(
+            tabs.get(home).unwrap().display_title(),
+            "https://github.com/"
+        );
+    }
+
+    #[test]
+    fn the_home_page_shows_no_loading_line() {
+        let mut tabs = Tabs::new();
+        let home = tabs.open();
+        tabs.set_url(home, HOME_URL);
+        tabs.set_loading(home, true);
+        assert!(!tabs.get(home).unwrap().shows_loading());
+        tabs.set_url(home, "https://github.com/");
+        assert!(tabs.get(home).unwrap().shows_loading());
+        tabs.set_url(home, "mini://home/#back");
+        assert!(!tabs.get(home).unwrap().shows_loading());
     }
 }

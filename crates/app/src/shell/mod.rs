@@ -10,7 +10,7 @@ mod app;
 pub mod client;
 mod commands;
 pub mod data_dir;
-mod hint;
+mod home;
 mod loading_line;
 mod settings_box;
 mod tab_strip;
@@ -50,7 +50,12 @@ pub fn load_cef() -> Library {
 pub fn run_main(main_args: &MainArgs, cmd_line: &CommandLine, sandbox_info: *mut u8) -> i32 {
     let is_browser_process = cmd_line.has_switch(Some(&CefString::from("type"))) != 1;
 
-    let code = execute_process(Some(main_args), None, sandbox_info);
+    // Subprocesses register the `mini` scheme like the browser process does.
+    let code = execute_process(
+        Some(main_args),
+        Some(&mut crate::scheme::SubprocessApp::new()),
+        sandbox_info,
+    );
     if !is_browser_process {
         // Renderer, GPU and utility subprocesses finish inside `execute_process`.
         return code;
