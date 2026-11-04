@@ -43,6 +43,27 @@ pub fn frame_rects(width: i32, height: i32, padding: i32) -> [Rect; 4] {
     ]
 }
 
+/// The width of the padding frame: the saved `padding` while the window is restored. Maximized,
+/// the window has no frame of its own; only the `overhang`, the part of the window that reaches
+/// past the screen's work area (0 when it fits), is inset so the page fills the work area.
+pub fn frame_padding(padding: u32, maximized: bool, overhang: i32) -> u32 {
+    if maximized {
+        u32::try_from(overhang).unwrap_or(0)
+    } else {
+        padding
+    }
+}
+
+/// Where a window's views start on the screen. A restored window's views start at its bounds;
+/// a maximized frameless window on Windows is larger than its screen, so its views are measured
+/// from a child view (`child`, when it could be converted to screen coordinates).
+pub fn view_origin(maximized: bool, bounds: (i32, i32), child: Option<(i32, i32)>) -> (i32, i32) {
+    match child {
+        Some(child) if maximized => child,
+        _ => bounds,
+    }
+}
+
 /// Bounds of a floating box `box_height` pixels tall: centered horizontally a fifth of the way
 /// down a window of `window_width` × `window_height`, at most `max_width` wide and keeping
 /// `side_margin` free on each side. It stays at least one pixel wide however narrow the window.
@@ -94,6 +115,19 @@ pub fn loading_segment(width: i32, elapsed_ms: u64, period_ms: u64) -> (i32, i32
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_restored_window_starts_at_its_bounds() {
+        assert_eq!(view_origin(false, (0, 536), Some((-8, 0))), (0, 536));
+        assert_eq!(view_origin(false, (120, 40), None), (120, 40));
+        assert_eq!(view_origin(false, (0, 500), Some((-8, 0))), (0, 500));
+    }
+
+    #[test]
+    fn a_maximized_window_starts_at_its_child_view() {
+        assert_eq!(view_origin(true, (-8, -8), Some((0, 0))), (0, 0));
+        assert_eq!(view_origin(true, (-8, -8), None), (-8, -8));
+    }
+
     fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
         Rect {
             x,
@@ -131,6 +165,20 @@ mod tests {
         assert_eq!(left.height, -2);
         assert_eq!(right.height, -2);
         assert_eq!((top.width, bottom.width), (10, 10));
+    }
+
+    #[test]
+    fn a_restored_window_keeps_its_saved_frame() {
+        assert_eq!(frame_padding(8, false, 0), 8);
+        assert_eq!(frame_padding(32, false, 8), 32);
+    }
+
+    #[test]
+    fn a_maximized_window_has_no_frame_beyond_its_overhang() {
+        assert_eq!(frame_padding(20, true, 0), 0);
+        assert_eq!(frame_padding(20, true, 8), 8);
+        assert_eq!(frame_padding(4, true, 8), 8);
+        assert_eq!(frame_padding(20, true, -3), 0);
     }
 
     #[test]

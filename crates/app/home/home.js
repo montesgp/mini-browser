@@ -139,6 +139,20 @@
 
   toggle.addEventListener('click', () => setCardOpen(card.hidden));
 
+  // A click outside the open card and its toggle closes the card, and so does `Esc`.
+  document.addEventListener('click', (event) => {
+    if (card.hidden) return;
+    const path = event.composedPath();
+    if (!path.includes(card) && !path.includes(toggle)) setCardOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || card.hidden) return;
+    event.preventDefault();
+    const inCard = card.contains(document.activeElement);
+    setCardOpen(false);
+    if (inCard) toggle.focus();
+  });
+
   // Settings can change elsewhere (the settings box, another tab): refresh when shown again.
   window.addEventListener('focus', () => request('state'));
   document.addEventListener('visibilitychange', () => {

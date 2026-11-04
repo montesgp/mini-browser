@@ -122,6 +122,11 @@ impl Tabs {
         }
     }
 
+    /// Whether `id` is the only tab, so closing it would leave the window without tabs.
+    pub fn is_only(&self, id: TabId) -> bool {
+        self.tabs.len() == 1 && self.tabs[0].id == id
+    }
+
     pub fn active(&self) -> Option<&Tab> {
         self.active.and_then(|index| self.tabs.get(index))
     }
@@ -243,6 +248,20 @@ mod tests {
         assert!(tabs.close(a));
         assert!(tabs.is_empty());
         assert_eq!(tabs.active(), None);
+    }
+
+    #[test]
+    fn only_the_single_tab_is_the_only_one() {
+        let mut tabs = Tabs::new();
+        assert!(!tabs.is_only(1));
+        let a = tabs.open();
+        assert!(tabs.is_only(a));
+        assert!(!tabs.is_only(99));
+        let b = tabs.open();
+        assert!(!tabs.is_only(a));
+        assert!(!tabs.is_only(b));
+        assert!(tabs.close(a));
+        assert!(tabs.is_only(b));
     }
 
     #[test]

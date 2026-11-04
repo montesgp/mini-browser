@@ -1,10 +1,10 @@
-//! The top bar: a thin dark row below the frame's top side with the tab strip and the
-//! minimize, maximize/restore and close buttons (right-aligned, or left-aligned on macOS).
-//! Pinned, it always shows and the page sits below it. In auto mode it is an overlay that shows
-//! while the pointer is at the top edge of the window or over the bar, and briefly when the
-//! tabs change; choosing a tab hides it at once. Hidden, nothing of it shows. A timer checks the
-//! pointer, because Views reports no pointer moves over the page. The rules live in
-//! `mini_core::top_bar`.
+//! The top bar: a thin dark row below the frame's top side with the tab strip, a pin button and
+//! the minimize, maximize/restore and close buttons (right-aligned, or left-aligned on macOS).
+//! Pinned, it always shows. In auto mode it shows while the pointer is over the bar's area (the
+//! frame's top side and the bar's height), and briefly when the tabs change; choosing a tab
+//! hides it at once. Shown, it pushes the page down by its height; hidden, nothing of it shows.
+//! A timer checks the pointer, because Views reports no pointer moves over the page. The rules
+//! live in `mini_core::top_bar`.
 
 use std::{cell::RefCell, time::Instant};
 
@@ -15,6 +15,7 @@ use mini_core::{
 };
 
 use super::{
+    settings_box,
     tab_strip::{self, STRIP_COLOR, STRIP_HEIGHT},
     tabs,
     window::{self, DarkPanelDelegate},
@@ -25,6 +26,10 @@ const BUTTON_TEXT_COLOR: u32 = 0xFFB4_B4B4;
 const BUTTON_HOVER_COLOR: u32 = 0xFF33_3333;
 /// A muted red, like the close button of Windows.
 const CLOSE_HOVER_COLOR: u32 = 0xFFB0_3A3A;
+const PIN_WIDTH: i32 = 32;
+/// The pin of a pinned bar, in the accent color of the loading line.
+const PINNED_COLOR: u32 = 0xFF5B_8DEF;
+const UNPINNED_COLOR: u32 = 0xFF6E_6E6E;
 /// On Windows, Segoe UI Symbol's window control glyphs; elsewhere, plain text glyphs. (Views
 /// draws the private-use glyphs of Segoe Fluent Icons as missing characters.)
 #[cfg(target_os = "windows")]
@@ -34,9 +39,11 @@ const BUTTON_FONT: &str = "Helvetica, Arial, 13px";
 /// How often the pointer is checked.
 const POLL_MS: i64 = 100;
 
-// U+FE0E asks for the text (monochrome) form of a symbol, not the color emoji.
+// U+FE0E asks for the text (monochrome) form of a symbol, not the color emoji. Segoe UI
+// Symbol's minimize glyph (U+1F5D5) sits on the baseline, below the other two; its horizontal
+// line extension sits on their center.
 #[cfg(target_os = "windows")]
-const MINIMIZE_GLYPH: &str = "\u{1F5D5}\u{FE0E}";
+const MINIMIZE_GLYPH: &str = "\u{23AF}";
 #[cfg(target_os = "windows")]
 const MAXIMIZE_GLYPH: &str = "\u{1F5D6}\u{FE0E}";
 #[cfg(target_os = "windows")]
@@ -51,9 +58,15 @@ const MAXIMIZE_GLYPH: &str = "\u{25A1}";
 const RESTORE_GLYPH: &str = "\u{2750}";
 #[cfg(not(target_os = "windows"))]
 const CLOSE_GLYPH: &str = "\u{2715}";
+const PIN_GLYPH: &str = "\u{1F4CC}\u{FE0E}";
+#[cfg(target_os = "windows")]
+const PIN_FONT: &str = "Segoe UI Symbol, 14px";
+#[cfg(not(target_os = "windows"))]
+const PIN_FONT: &str = "Helvetica, Arial, 14px";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Action {
+    Pin,
     Minimize,
     Maximize,
     Close,
@@ -62,8 +75,9 @@ enum Action {
 struct Bar {
     window: Window,
     controller: OverlayController,
-    /// Holds the page below the pinned bar.
+    /// Holds the page below the shown bar.
     spacer: Panel,
+    pin: LabelButton,
     maximize: LabelButton,
     mode: TopBarMode,
     state: TopBar,
@@ -76,7 +90,7 @@ thread_local! {
 }
 
 /// Creates the bar as an overlay of `window` in `mode` and returns the spacer, the panel that
-/// keeps the page below the pinned bar; add it to the window's layout below the frame's top
+/// keeps the page below the shown bar; add it to the window's layout below the frame's top
 /// side. Call it before the other overlays, so they stay above the bar.
 pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
     let spacer = panel_create(Some(&mut DarkPanelDelegate::new(STRIP_COLOR, STRIP_HEIGHT)))?;
@@ -87,14 +101,18 @@ pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
         ..Default::default()
     }))?;
     let mut strip = View::from(&tab_strip::create()?);
+    let pin = window_button(Action::Pin)?;
     let buttons = buttons_panel()?;
     let maximize = buttons.1;
     let mut buttons = View::from(&buttons.0);
+    // The pin follows the strip: before the window buttons on the right, or at the end.
     if cfg!(target_os = "macos") {
         panel.add_child_view(Some(&mut buttons));
         panel.add_child_view(Some(&mut strip));
+        panel.add_child_view(Some(&mut View::from(&pin)));
     } else {
         panel.add_child_view(Some(&mut strip));
+        panel.add_child_view(Some(&mut View::from(&pin)));
         panel.add_child_view(Some(&mut buttons));
     }
     layout.set_flex_for_view(Some(&mut strip), 1);
@@ -105,6 +123,7 @@ pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
         window: window.clone(),
         controller,
         spacer: spacer.clone(),
+        pin,
         maximize,
         mode,
         state: TopBar::default(),
@@ -146,6 +165,7 @@ fn buttons_panel() -> Option<(Panel, LabelButton)> {
 
 fn window_button(action: Action) -> Option<LabelButton> {
     let (glyph, name) = match action {
+        Action::Pin => (PIN_GLYPH, "Pin top bar"),
         Action::Minimize => (MINIMIZE_GLYPH, "Minimize"),
         Action::Maximize => (MAXIMIZE_GLYPH, "Maximize"),
         Action::Close => (CLOSE_GLYPH, "Close"),
@@ -154,14 +174,24 @@ fn window_button(action: Action) -> Option<LabelButton> {
         Some(&mut WindowButtonDelegate::new(action)),
         Some(&CefString::from(glyph)),
     )?;
-    button.set_font_list(Some(&CefString::from(BUTTON_FONT)));
+    let font = if action == Action::Pin {
+        PIN_FONT
+    } else {
+        BUTTON_FONT
+    };
+    button.set_font_list(Some(&CefString::from(font)));
     button.set_enabled_text_colors(BUTTON_TEXT_COLOR);
     button.set_background_color(STRIP_COLOR);
     button.set_ink_drop_enabled(0);
     button.set_focusable(0);
     button.set_horizontal_alignment(HorizontalAlignment::CENTER);
+    let width = if action == Action::Pin {
+        PIN_WIDTH
+    } else {
+        BUTTON_WIDTH
+    };
     let size = Size {
-        width: BUTTON_WIDTH,
+        width,
         height: STRIP_HEIGHT,
     };
     button.set_minimum_size(Some(&size));
@@ -175,8 +205,7 @@ fn set_name(button: &LabelButton, name: &str) {
     button.set_accessible_name(Some(&CefString::from(name)));
 }
 
-/// Switches to `mode`: pinned shows the bar and moves the page below it; auto hides it until
-/// the pointer reaches the top edge.
+/// Switches to `mode`: pinned shows the bar; auto hides it unless the pointer is over it.
 pub fn set_mode(mode: TopBarMode) {
     BAR.with_borrow_mut(|bar| {
         if let Some(bar) = bar.as_mut() {
@@ -186,15 +215,19 @@ pub fn set_mode(mode: TopBarMode) {
     apply_mode();
 }
 
+/// Shows the mode on the pin button, and the bar for the mode.
 fn apply_mode() {
-    let Some((window, spacer, mode)) = BAR.with_borrow(|bar| {
-        bar.as_ref()
-            .map(|bar| (bar.window.clone(), bar.spacer.clone(), bar.mode))
-    }) else {
+    let Some((pin, mode)) =
+        BAR.with_borrow(|bar| bar.as_ref().map(|bar| (bar.pin.clone(), bar.mode)))
+    else {
         return;
     };
-    spacer.set_visible((mode == TopBarMode::Pinned).into());
-    window.layout();
+    let (color, name) = match mode {
+        TopBarMode::Pinned => (PINNED_COLOR, "Unpin top bar"),
+        TopBarMode::Auto => (UNPINNED_COLOR, "Pin top bar"),
+    };
+    pin.set_enabled_text_colors(color);
+    set_name(&pin, name);
     update();
 }
 
@@ -259,8 +292,8 @@ pub fn reposition() {
     }
 }
 
-/// The part of the shown bar right of the tab labels and +N count, up to the window buttons,
-/// in window coordinates: it drags the window.
+/// The part of the shown bar right of the tab labels, the `+` button and the +N count, up to
+/// the pin, in window coordinates: it drags the window.
 pub fn empty_area() -> Option<Rect> {
     let controller = BAR.with_borrow(|bar| bar.as_ref().map(|bar| bar.controller.clone()))?;
     if controller.is_visible() == 0 {
@@ -280,11 +313,12 @@ pub fn empty_area() -> Option<Rect> {
 
 /// Shows or hides the bar for the pointer's place and the time.
 fn update() {
-    let Some((window, controller, mode, padding)) = BAR.with_borrow(|bar| {
+    let Some((window, controller, spacer, mode, padding)) = BAR.with_borrow(|bar| {
         bar.as_ref().map(|bar| {
             (
                 bar.window.clone(),
                 bar.controller.clone(),
+                bar.spacer.clone(),
                 bar.mode,
                 window::padding(),
             )
@@ -297,9 +331,7 @@ fn update() {
         .then(|| pointer_in(&window))
         .flatten();
     // A maximized window on Windows reaches past the screen's top; the pointer stops there.
-    let cut = window.display().map_or(0, |display| {
-        display.work_area().y - window.bounds_in_screen().y
-    });
+    let cut = window::overhang(&window);
     let pointer = top_bar::pointer_zone(
         point,
         size.width,
@@ -313,12 +345,16 @@ fn update() {
     }) else {
         return;
     };
-    if (controller.is_visible() == 1) != visible {
+    let state = i32::from(visible);
+    if controller.is_visible() != state || spacer.is_visible() != state {
+        // The spacer pushes the page down below the shown bar, so the bar never covers it.
+        spacer.set_visible(state);
+        window.layout();
         if visible {
             reposition();
             tab_strip::fit();
         }
-        controller.set_visible(visible.into());
+        controller.set_visible(state);
         window::update_drag_regions();
     }
 }
@@ -345,9 +381,7 @@ wrap_task! {
 /// The pointer's place in `window` coordinates, or `None` when it is not over the window.
 fn pointer_in(window: &Window) -> Option<(i32, i32)> {
     let point = pointer_on_screen(window)?;
-    // `convert_point_from_screen` leaves the point unchanged for a window, so subtract the
-    // window's origin instead.
-    let origin = window.bounds_in_screen();
+    let origin = window::origin_in_screen(window);
     Some((point.x - origin.x, point.y - origin.y))
 }
 
@@ -404,6 +438,7 @@ fn run(action: Action) {
         return;
     };
     match action {
+        Action::Pin => settings_box::toggle_top_bar(),
         Action::Minimize => window.minimize(),
         Action::Maximize if window.is_maximized() == 1 => window.restore(),
         Action::Maximize => window.maximize(),

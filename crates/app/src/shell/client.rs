@@ -219,7 +219,8 @@ wrap_life_span_handler! {
         }
 
         fn do_close(&self, browser: Option<&mut Browser>) -> i32 {
-            // A tab other than the last one closes on its own, without closing the window.
+            // A tab closes on its own, without closing the window, unless it is the last one
+            // while the window closes.
             if browser.is_some_and(|browser| tabs::close_tab_for(browser)) {
                 return 1;
             }
@@ -241,7 +242,8 @@ wrap_life_span_handler! {
                 browsers.retain(|open| open.is_same(Some(&mut browser.clone())) == 0);
                 browsers.len()
             });
-            if remaining == 0 {
+            // A closed last tab is replaced by a home tab, whose browser may not exist yet.
+            if remaining == 0 && !tabs::keeps_running() {
                 quit_message_loop();
             }
         }
@@ -257,6 +259,7 @@ pub fn is_closing() -> bool {
 /// Asks every open browser to close; the app quits once the last one is gone.
 #[cfg(target_os = "macos")]
 pub fn close_all_browsers(force_close: bool) {
+    tabs::start_quitting();
     let browsers = BROWSERS.with_borrow(Vec::clone);
     for browser in browsers {
         if let Some(host) = browser.host() {

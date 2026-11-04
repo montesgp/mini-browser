@@ -22,6 +22,8 @@ struct Shell {
     client: Client,
     tabs: Tabs,
     views: Vec<(TabId, BrowserView)>,
+    /// Whether the window is closing, so its last tab closes instead of returning home.
+    quitting: bool,
 }
 
 impl Shell {
@@ -66,6 +68,7 @@ pub fn attach(window: Window, container: Panel, client: Client) {
         client,
         tabs: Tabs::new(),
         views: Vec::new(),
+        quitting: false,
     }));
 }
 
@@ -197,22 +200,24 @@ fn close_browser(browser: &Browser) {
     }
 }
 
-/// Called when `browser` is ready to close. Unless it is the last tab, removes its tab and
-/// returns `true`: the tab's view is torn down instead of closing the window. For the last tab
-/// it returns `false`, so CEF closes the window (and with it the app).
+/// Called when `browser` is ready to close. Unless the window is closing and this is its last
+/// tab, removes its tab and returns `true`: the tab's view is torn down instead of closing the
+/// window, and a last tab is replaced by a home tab. While the window closes, the last tab
+/// returns `false`, so CEF closes the window (and with it the app).
 pub fn close_tab_for(browser: &Browser) -> bool {
     let removed = with_shell(|shell| {
         let id = shell.tab_for(browser)?;
-        if shell.tabs.len() <= 1 {
+        let last = shell.tabs.is_only(id);
+        if last && shell.quitting {
             return None;
         }
         shell.tabs.close(id);
         let index = shell.views.iter().position(|(tab, _)| *tab == id)?;
         let (_, view) = shell.views.remove(index);
-        Some((shell.container.clone(), view))
+        Some((shell.container.clone(), view, last))
     })
     .flatten();
-    let Some((container, view)) = removed else {
+    let Some((container, view, last)) = removed else {
         return false;
     };
     // Hide the closing page at once (see `show_active` for the order); removing it waits.
@@ -220,7 +225,11 @@ pub fn close_tab_for(browser: &Browser) -> bool {
     // Tear the view down after CEF returns from `do_close`.
     let mut task = RemoveView::new(container, view);
     post_task(ThreadId::UI, Some(&mut task));
-    show_active();
+    if last {
+        open_tab(None);
+    } else {
+        show_active();
+    }
     true
 }
 
@@ -255,6 +264,18 @@ pub fn quit() {
     if let Some(window) = with_shell(|shell| shell.window.clone()) {
         window.close();
     }
+}
+
+/// Marks the window as closing, so its last tab closes the window instead of returning home.
+/// Call it before the browsers are asked to close for quitting.
+pub fn start_quitting() {
+    with_shell(|shell| shell.quitting = true);
+}
+
+/// Whether the window is open and not closing, so the app runs on without browsers for a moment
+/// while a home tab replaces the closed last tab.
+pub fn keeps_running() -> bool {
+    with_shell(|shell| !shell.quitting).unwrap_or(false)
 }
 
 pub fn with_active_browser(f: impl FnOnce(&Browser)) {
