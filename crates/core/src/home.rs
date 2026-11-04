@@ -11,9 +11,20 @@ pub const HOST: &str = "home";
 /// The URL new tabs open.
 pub const HOME_URL: &str = "mini://home/";
 
-/// Whether `url` is the home page or one of its files.
+/// Whether `url` uses the app's own [`SCHEME`].
+pub fn is_app_url(url: &str) -> bool {
+    url.get(..SCHEME.len() + 1)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("mini:"))
+}
+
+/// Whether `url` is the home page document (`mini://home/` or `mini://home/index.html`, with
+/// an optional query or fragment); its files, `state` and commands are not.
 pub fn is_home_url(url: &str) -> bool {
-    url.starts_with(HOME_URL)
+    let Some(rest) = url.strip_prefix(HOME_URL) else {
+        return false;
+    };
+    let path = rest.split(['?', '#']).next().unwrap_or_default();
+    matches!(path, "" | "index.html")
 }
 
 /// A static file of the home page.
@@ -219,6 +230,25 @@ mod tests {
     }
 
     #[test]
+    fn urls_of_the_app_scheme_are_recognized() {
+        assert!(is_app_url("mini://home/"));
+        assert!(is_app_url("mini://home/cmd/quit"));
+        assert!(is_app_url("MINI://other"));
+        assert!(!is_app_url("https://mini.dev/"));
+        assert!(!is_app_url("minix://home/"));
+        assert!(!is_app_url("about:blank"));
+        assert!(!is_app_url(""));
+    }
+
+    #[test]
+    fn the_first_padding_step_wins() {
+        assert_eq!(
+            route("mini://home/cmd/padding?step=1&step=-1"),
+            Some(Route::Command(HomeCommand::Padding(1)))
+        );
+    }
+
+    #[test]
     fn unknown_paths_and_commands_have_no_route() {
         for url in [
             "mini://home/cmd/",
@@ -240,9 +270,17 @@ mod tests {
     }
 
     #[test]
-    fn home_urls_are_recognized_by_prefix() {
+    fn only_the_home_document_is_the_home_page() {
         assert!(is_home_url("mini://home/"));
-        assert!(is_home_url("mini://home/cmd/quit"));
+        assert!(is_home_url("mini://home/#x"));
+        assert!(is_home_url("mini://home/?a=1"));
+        assert!(is_home_url("mini://home/index.html"));
+        assert!(is_home_url("mini://home/index.html#x"));
+        assert!(!is_home_url("mini://home/cmd/quit"));
+        assert!(!is_home_url("mini://home/state"));
+        assert!(!is_home_url("mini://home/home.css"));
+        assert!(!is_home_url("mini://home/home.js"));
+        assert!(!is_home_url("mini://home/index.htmlx"));
         assert!(!is_home_url("mini://homes/"));
         assert!(!is_home_url("https://home/"));
         assert!(!is_home_url("about:blank"));

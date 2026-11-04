@@ -145,6 +145,10 @@ wrap_scheme_handler_factory! {
             let (reply, ui_request) = match home::route(&url) {
                 None => (Reply::not_found(), None),
                 Some(Route::Asset(asset)) => (Reply::asset(asset), None),
+                // `state` and the commands are only for the page's `fetch`, never a document.
+                Some(_) if request.resource_type() != ResourceType::XHR => {
+                    (Reply::not_found(), None)
+                }
                 Some(route) => match browser {
                     Some(browser) if from_home_page(frame.as_deref(), request) => {
                         let command = match route {
