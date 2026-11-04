@@ -18,7 +18,7 @@ Second round of owner feedback from the local test of the top bar and home page:
 
 - [x] T1 — S1–S6, S8, S9: bar, home card, last tab, maximized frame (tests for core logic, Windows functional checks; S7 verified unchanged) — worker + inline — commit: feat(app) polish the top bar (core 133 tests; view_origin RED→GREEN)
 - [x] T2 — S1–S9: independent verify on Windows — verify — evidence: L5–L6
-- [ ] T3 — PR, ci-gate, merge — inline — merge: —
+- [x] T3 — PR, ci-gate, merge — inline — merge: #21 df01980
 
 ## Log
 

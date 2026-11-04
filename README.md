@@ -2,7 +2,7 @@
 
 A minimal, dark, chrome-less Chromium browser for screen sharing, streaming and quick tests, without the bloat and state of your everyday browser.
 
-![mini-browser: typing an address, opening a tab, showing the tab strip and changing the padding](docs/demo.gif)
+![mini-browser: the home page and its shortcuts card, opening vercel.com, the top bar sliding in, a new tab with github.com, switching tabs and pinning the bar](docs/demo.gif)
 
 **[Download](https://github.com/montesgp/mini-browser/releases/latest)** · [For humans](#for-humans) · [For agents and contributors](#for-agents-and-contributors) · [Contributing](CONTRIBUTING.md)
 
