@@ -80,20 +80,40 @@ pub fn set_padding(padding: u32) {
     fit_frame();
 }
 
-/// Where the window's views start on the screen, see [`layout::view_origin`]. A maximized
-/// frameless window on Windows is larger than its screen and its views start inside it, so
-/// they are measured from a child view (`convert_point_from_screen` leaves points unchanged
-/// for the window itself); a restored window's views start at its bounds.
+/// Where the window's views start on the screen, in density-independent pixels. On Windows
+/// that is the window's client area, read from the system: CEF's own conversions are off for
+/// a maximized frameless window, whose client area sits inside a frame that reaches past its
+/// screen, on any screen that does not start at (0, 0).
 pub fn origin_in_screen(window: &Window) -> Point {
+    #[cfg(target_os = "windows")]
+    if let Some(origin) = client_origin(window) {
+        return origin;
+    }
     let bounds = window.bounds_in_screen();
-    let child = window.child_view_at(0).and_then(|child| {
-        let place = child.bounds();
-        let mut point = Point { x: 0, y: 0 };
-        (child.convert_point_to_screen(Some(&mut point)) == 1)
-            .then_some((point.x - place.x, point.y - place.y))
-    });
-    let (x, y) = layout::view_origin(window.is_maximized() == 1, (bounds.x, bounds.y), child);
-    Point { x, y }
+    Point {
+        x: bounds.x,
+        y: bounds.y,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn client_origin(window: &Window) -> Option<Point> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowInfo, WINDOWINFO};
+
+    // SAFETY: WINDOWINFO is plain data, valid when zeroed; `cbSize` is set before the call,
+    // which fills it for this window's handle.
+    let info = unsafe {
+        let mut info: WINDOWINFO = std::mem::zeroed();
+        info.cbSize = u32::try_from(std::mem::size_of::<WINDOWINFO>()).ok()?;
+        if GetWindowInfo(window.window_handle().0.cast(), &mut info) == 0 {
+            return None;
+        }
+        info
+    };
+    Some(display_convert_screen_point_from_pixels(Some(&Point {
+        x: info.rcClient.left,
+        y: info.rcClient.top,
+    })))
 }
 
 /// How far the window's views reach past the top of its screen's work area. 0 when they fit.
