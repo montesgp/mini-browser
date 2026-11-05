@@ -3,13 +3,16 @@
 //! rest of the strip moves the window. Tabs share the strip's width evenly and long titles end in
 //! an ellipsis; when there are more tabs than fit, the strip shows the ones around the active tab
 //! followed by how many are hidden (`+3`). A `+` button right after the last shown tab opens a
-//! new tab. Views reports no middle clicks to button delegates
-//! (`on_button_pressed` has no event flags, and buttons only react to the left button), so a
-//! middle click does not close a tab.
+//! new tab at the end. Views reports no middle clicks or drags to button delegates
+//! (`on_button_pressed` has no event flags, and buttons only react to the left button), so on
+//! Windows `mouse_hook` closes a tab on a middle click and reorders tabs dragged along the strip,
+//! hit-testing the labels with [`tab_at`].
 
 use std::cell::{Cell, RefCell};
 
 use cef::*;
+#[cfg(target_os = "windows")]
+use mini_core::strip;
 use mini_core::{
     strip::{StripLayout, strip_layout},
     tabs::TabId,
@@ -95,6 +98,24 @@ pub fn labels_end() -> i32 {
         .then(|| panel.child_view_at(count - 1))
         .flatten()
         .map_or(0, |last| last.bounds().x + last.bounds().width)
+}
+
+/// The shown tab whose label lies under `x` (strip coordinates), and where its label starts.
+#[cfg(target_os = "windows")]
+pub fn tab_at(x: i32) -> Option<(TabId, i32)> {
+    let (layout, _) = SHOWN.get()?;
+    let index = strip::tab_at(x, &layout, TAB_SPACING)?;
+    let id =
+        BUTTONS.with_borrow(|buttons| buttons.get(index - layout.first).map(|views| views.id))?;
+    Some((id, strip::tab_left(index, &layout, TAB_SPACING)?))
+}
+
+/// The position among the tabs of a tab dragged with the pointer at `x` (strip coordinates),
+/// held `grab` pixels from its label's left edge.
+#[cfg(target_os = "windows")]
+pub fn drag_index(x: i32, grab: i32) -> Option<usize> {
+    let (layout, _) = SHOWN.get()?;
+    strip::drag_index(x, grab, &layout, TAB_SPACING)
 }
 
 /// The label layout for `entries` in the strip's current width.
@@ -259,7 +280,7 @@ fn update_close_later(tab: TabId) {
     post_task(ThreadId::UI, Some(&mut task));
 }
 
-/// Adds the `+` button that opens a new tab, like `Ctrl/Cmd+T`.
+/// Adds the `+` button that opens a new tab at the end, like `Ctrl/Cmd+T`.
 fn add_new_tab_button(panel: &Panel) {
     let Some(button) = label_button_create(
         Some(&mut NewTabDelegate::new()),
@@ -417,7 +438,7 @@ wrap_task! {
 
     impl Task {
         fn execute(&self) {
-            tabs::open_tab(None);
+            tabs::new_tab();
         }
     }
 }

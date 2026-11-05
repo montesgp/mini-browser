@@ -12,6 +12,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 - A small `×` on the current tab and on the tab under the mouse closes that tab, following the `Ctrl/Cmd+W` rules. Closing the last tab leaves a home page; the app quits only from the window's close button, `Alt+F4`, `Ctrl/Cmd+Q` or the home page's quit row.
 - A `+` after the last tab opens a new tab, and a pin in the bar switches it between `Auto` and `Pinned`.
 - While the settings box is open, `+` and `-` widen and narrow the frame.
+- On Windows, a middle click on a tab closes it, and dragging a tab left or right in the top bar reorders the tabs; a press without moving still switches to the tab. macOS and Linux do not have these yet.
+- A click on the frame or the top bar also closes the settings box (Windows).
 - The settings box has a `×` that closes it and also closes when you click outside it, on the page or a tab.
 - The home page's commands card follows setting changes made elsewhere (the bar's pin, the settings box, `Ctrl/Cmd+Shift+F`) at once.
 - A "Top bar" setting, `Auto` or `Pinned`, in the settings box (`Ctrl/Cmd+,`), saved in `settings.json` as `topBar`. `Pinned` keeps the bar visible with the page below it. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change.
@@ -19,6 +21,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Changed
 
+- `Ctrl/Cmd+T`, the bar's `+` and the home page's "New tab" row open the tab at the end of the tabs instead of right after the current one; tabs opened by pages and `--url` still open right after it.
 - The settings box opens in the bottom-right corner of the page instead of near the top, so it no longer covers search fields.
 - New tabs open the home page instead of an empty tab with the address box; `Ctrl/Cmd+L` on the home page focuses its field. The faint `Ctrl+L to enter an address` hint is gone.
 - `Ctrl/Cmd+Shift+F` now switches the top bar between `Auto` and `Pinned` and remembers it; before, it showed or hid the tab strip until restart.

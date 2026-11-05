@@ -77,9 +77,26 @@ pub fn detach() {
     SHELL.take();
 }
 
-/// Opens a tab after the active one. With `url` it loads it; without, the home page, which
-/// stays the first entry of the tab's history.
+/// Opens a home tab at the end of the tabs, like `Ctrl/Cmd+T` and the strip's `+`.
+pub fn new_tab() {
+    create_tab(None, Place::End);
+}
+
+/// Opens a tab after the active one, like a link the user opened (`--url` when the app is
+/// started again). With `url` it loads it; without, the home page, which stays the first entry
+/// of the tab's history.
 pub fn open_tab(url: Option<&str>) {
+    create_tab(url, Place::AfterActive);
+}
+
+/// Where a new tab goes in the tab list.
+#[derive(Clone, Copy)]
+enum Place {
+    AfterActive,
+    End,
+}
+
+fn create_tab(url: Option<&str>, place: Place) {
     let url = url.unwrap_or(HOME_URL);
     let Some(mut client) = with_shell(|shell| shell.client.clone()) else {
         return;
@@ -93,22 +110,30 @@ pub fn open_tab(url: Option<&str>) {
         Some(&mut window::MiniBrowserViewDelegate::new()),
     );
     if let Some(view) = view {
-        add_tab(view, Some(url));
+        add_tab(view, Some(url), place);
     }
 }
 
-/// Adds an already created browser view (a popup) as a new active tab.
+/// Adds an already created browser view (a popup) as a new active tab after the active one.
 pub fn adopt_popup(view: BrowserView) {
-    add_tab(view, None);
+    add_tab(view, None, Place::AfterActive);
 }
 
-fn add_tab(view: BrowserView, url: Option<&str>) {
+fn add_tab(view: BrowserView, url: Option<&str>, place: Place) {
     let Some(container) = with_shell(|shell| {
-        let id = shell.tabs.open();
+        let id = match place {
+            Place::AfterActive => shell.tabs.open(),
+            Place::End => shell.tabs.open_at_end(),
+        };
         if let Some(url) = url {
             shell.tabs.set_url(id, url);
         }
-        shell.views.push((id, view.clone()));
+        // The views follow the model's order (the container's order does not matter: it shows
+        // one view at a time).
+        let index = shell.tabs.index_of(id).unwrap_or(shell.views.len());
+        shell
+            .views
+            .insert(index.min(shell.views.len()), (id, view.clone()));
         shell.container.clone()
     }) else {
         return;
@@ -181,6 +206,36 @@ pub fn activate_previous() {
     }
 }
 
+/// Moves tab `id` to position `to` among the tabs and shows the new order in the strip.
+#[cfg(target_os = "windows")]
+pub fn move_tab(id: TabId, to: usize) {
+    let moved = with_shell(|shell| {
+        if !shell.tabs.move_tab(id, to) {
+            return false;
+        }
+        let order: Vec<TabId> = shell.tabs.iter().map(|tab| tab.id).collect();
+        shell
+            .views
+            .sort_by_key(|(tab, _)| order.iter().position(|id| id == tab));
+        true
+    });
+    if moved == Some(true) {
+        tab_strip::refresh();
+    }
+}
+
+/// The position of tab `id` among the tabs.
+#[cfg(target_os = "windows")]
+pub fn index_of(id: TabId) -> Option<usize> {
+    with_shell(|shell| shell.tabs.index_of(id)).flatten()
+}
+
+/// Whether `id` is the active tab.
+#[cfg(target_os = "windows")]
+pub fn is_active(id: TabId) -> bool {
+    with_shell(|shell| shell.tabs.active().is_some_and(|tab| tab.id == id)).unwrap_or(false)
+}
+
 /// Asks the active tab's browser to close; [`close_tab_for`] completes the close.
 pub fn close_active() {
     with_active_browser(close_browser);
@@ -226,7 +281,7 @@ pub fn close_tab_for(browser: &Browser) -> bool {
     let mut task = RemoveView::new(container, view);
     post_task(ThreadId::UI, Some(&mut task));
     if last {
-        open_tab(None);
+        new_tab();
     } else {
         show_active();
     }

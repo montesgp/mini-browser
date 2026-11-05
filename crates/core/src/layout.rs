@@ -10,6 +10,14 @@ pub struct Rect {
     pub height: i32,
 }
 
+impl Rect {
+    /// Whether the point `(x, y)` lies inside the rectangle (its right and bottom edges are
+    /// outside).
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        (self.x..self.x + self.width).contains(&x) && (self.y..self.y + self.height).contains(&y)
+    }
+}
+
 /// The top, bottom, left and right sides of a frame `padding` pixels wide inside a window of
 /// `width` × `height`. The left and right sides sit between the top and bottom ones. Sides that
 /// do not fit (padding wider than half the window) come out empty or negative.
@@ -98,6 +106,20 @@ pub fn centered_box(window_width: i32, window_height: i32, width: i32, height: i
     }
 }
 
+/// Whether a left click at `point` closes the open settings box at `box_bounds`: a click on the
+/// frame (outside the `page` area) or on the shown top `bar` does, a click inside the box never
+/// does. Clicks on the page close the box by taking the keyboard focus.
+pub fn click_closes_box(
+    point: (i32, i32),
+    box_bounds: Rect,
+    page: Rect,
+    bar: Option<Rect>,
+) -> bool {
+    let (x, y) = point;
+    let on_bar = bar.is_some_and(|bar| bar.contains(x, y));
+    !box_bounds.contains(x, y) && (on_bar || !page.contains(x, y))
+}
+
 /// The visible part `(x, width)` of the loading line's moving segment in a line `width` pixels
 /// wide, `elapsed_ms` into the animation. The segment, a third of the line, sweeps from just
 /// left of the line to just right of it once every `period_ms`, then starts over.
@@ -127,6 +149,38 @@ mod tests {
             width,
             height,
         }
+    }
+
+    #[test]
+    fn a_rect_contains_its_inside_but_not_its_far_edges() {
+        let r = rect(10, 20, 30, 40);
+        assert!(r.contains(10, 20));
+        assert!(r.contains(39, 59));
+        assert!(!r.contains(40, 30));
+        assert!(!r.contains(20, 60));
+        assert!(!r.contains(9, 30));
+        assert!(!r.contains(20, 19));
+        assert!(!rect(0, 0, 0, 10).contains(0, 5));
+    }
+
+    #[test]
+    fn clicks_on_the_frame_or_the_bar_close_the_settings_box() {
+        let page = rect(8, 0, 1264, 792);
+        let settings = rect(976, 600, 280, 176);
+        let bar = Some(rect(8, 8, 1264, 28));
+        // The frame: left side, bottom side, right side.
+        assert!(click_closes_box((3, 400), settings, page, bar));
+        assert!(click_closes_box((600, 795), settings, page, None));
+        assert!(click_closes_box((1275, 700), settings, page, bar));
+        // The shown bar, which lies over the page area.
+        assert!(click_closes_box((900, 20), settings, page, bar));
+        // The page itself closes it through the focus instead.
+        assert!(!click_closes_box((600, 300), settings, page, bar));
+        assert!(!click_closes_box((900, 20), settings, page, None));
+        // Inside the box never closes it, even where it reaches past the page.
+        assert!(!click_closes_box((1000, 700), settings, page, bar));
+        let wide = rect(0, 600, 1280, 176);
+        assert!(!click_closes_box((3, 700), wide, page, bar));
     }
 
     #[test]

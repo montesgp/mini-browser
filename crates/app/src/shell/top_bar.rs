@@ -314,6 +314,21 @@ pub fn empty_area() -> Option<Rect> {
     })
 }
 
+/// The shown bar's bounds in window coordinates; `None` while it is hidden.
+#[cfg(target_os = "windows")]
+pub fn shown_bounds() -> Option<Rect> {
+    let controller = BAR.with_borrow(|bar| bar.as_ref().map(|bar| bar.controller.clone()))?;
+    (controller.is_visible() == 1).then(|| controller.bounds())
+}
+
+/// `point` (window coordinates) in the tab strip's coordinates, while the bar is shown.
+#[cfg(target_os = "windows")]
+pub fn strip_point(point: (i32, i32)) -> Option<(i32, i32)> {
+    let bar = shown_bounds()?;
+    let strip = tab_strip::panel()?.bounds();
+    Some((point.0 - bar.x - strip.x, point.1 - bar.y - strip.y))
+}
+
 /// Shows or hides the bar for the pointer's place and the time.
 fn update() {
     let Some((window, controller, spacer, mode, padding)) = BAR.with_borrow(|bar| {

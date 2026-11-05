@@ -488,6 +488,33 @@ fn close_if_focus_left() {
     }
 }
 
+/// Closes the open box after a left click at `point` (window coordinates) on the frame or the
+/// shown top bar, which take no keyboard focus; clicks inside the box keep it open.
+#[cfg(target_os = "windows")]
+pub fn close_on_click(point: (i32, i32)) {
+    let Some(controller) = SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box
+            .as_ref()
+            .map(|settings_box| settings_box.controller.clone())
+    }) else {
+        return;
+    };
+    let Some(page) = window::page_area() else {
+        return;
+    };
+    let core_rect = |rect: Rect| layout::Rect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+    };
+    let bounds = core_rect(controller.bounds());
+    let bar = top_bar::shown_bounds().map(core_rect);
+    if controller.is_visible() == 1 && layout::click_closes_box(point, bounds, page, bar) {
+        hide();
+    }
+}
+
 wrap_task! {
     struct CloseIfFocusLeft;
 

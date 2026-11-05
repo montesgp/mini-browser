@@ -56,7 +56,7 @@ pub fn run(command: Command) {
         // The home page has its own address field.
         Command::FocusAddress if tabs::active_is_home() => home::focus_address_field(),
         Command::FocusAddress => address_box::show(&tabs::active_url()),
-        Command::NewTab => tabs::open_tab(None),
+        Command::NewTab => tabs::new_tab(),
         Command::CloseTab => tabs::close_active(),
         Command::NextTab => tabs::activate_next(),
         Command::PreviousTab => tabs::activate_previous(),
