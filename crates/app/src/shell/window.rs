@@ -405,12 +405,17 @@ wrap_window_delegate! {
             settings_box::create(window, self.settings.clone(), self.settings_path.clone());
 
             tabs::attach(window.clone(), container, self.client.clone());
+            // Views reports no middle clicks or drags; on Windows a hook on this thread does.
+            #[cfg(target_os = "windows")]
+            super::mouse_hook::install(window);
             window.center_window(Some(&INITIAL_SIZE));
             window.show();
             tabs::open_tab(self.url.as_deref());
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
+            #[cfg(target_os = "windows")]
+            super::mouse_hook::uninstall();
             tabs::detach();
             address_box::destroy();
             settings_box::destroy();

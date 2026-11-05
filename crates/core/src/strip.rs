@@ -61,6 +61,45 @@ pub fn strip_layout(
     }
 }
 
+/// How far, in pixels along either axis, the pointer moves with the button down before a press
+/// on a tab becomes a drag; a shorter move is still a click.
+pub const DRAG_THRESHOLD: i32 = 5;
+
+/// Whether a press moved by `(dx, dy)` became a drag.
+pub fn beyond_drag_threshold(dx: i32, dy: i32) -> bool {
+    dx.abs() > DRAG_THRESHOLD || dy.abs() > DRAG_THRESHOLD
+}
+
+/// Where the label of tab `index` starts in the strip, for labels laid out by `layout` with
+/// `spacing` pixels between them; `None` when the tab is not shown.
+pub fn tab_left(index: usize, layout: &StripLayout, spacing: i32) -> Option<i32> {
+    let slot = index
+        .checked_sub(layout.first)
+        .filter(|slot| *slot < layout.count)?;
+    Some(i32::try_from(slot).ok()? * (layout.tab_width + spacing))
+}
+
+/// The tab whose label lies under `x` in the strip; `None` between labels and past them.
+pub fn tab_at(x: i32, layout: &StripLayout, spacing: i32) -> Option<usize> {
+    let stride = layout.tab_width + spacing;
+    if x < 0 || stride <= 0 || x % stride >= layout.tab_width {
+        return None;
+    }
+    let slot = usize::try_from(x / stride).ok()?;
+    (slot < layout.count).then_some(layout.first + slot)
+}
+
+/// Where a dragged tab goes: the shown position nearest to the dragged label's center, for the
+/// pointer at `x` holding the label `grab` pixels from its left edge. Stays among the shown
+/// tabs; `None` when no tab is shown.
+pub fn drag_index(x: i32, grab: i32, layout: &StripLayout, spacing: i32) -> Option<usize> {
+    let last = i32::try_from(layout.count.checked_sub(1)?).ok()?;
+    let stride = (layout.tab_width + spacing).max(1);
+    let center = x - grab + layout.tab_width / 2;
+    let slot = center.div_euclid(stride).clamp(0, last);
+    Some(layout.first + usize::try_from(slot).ok()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,6 +260,65 @@ mod tests {
                 ..shown(3, 1, MIN)
             }
         );
+    }
+
+    /// Tabs 5..9 shown, 100 px wide with 1 px gaps: tab 5 at 0..100, tab 6 at 101..201, ...
+    fn scrolled() -> StripLayout {
+        StripLayout {
+            first: 5,
+            count: 4,
+            tab_width: 100,
+            hidden: 3,
+        }
+    }
+
+    #[test]
+    fn a_small_move_is_still_a_click() {
+        assert!(!beyond_drag_threshold(0, 0));
+        assert!(!beyond_drag_threshold(DRAG_THRESHOLD, -DRAG_THRESHOLD));
+        assert!(beyond_drag_threshold(DRAG_THRESHOLD + 1, 0));
+        assert!(beyond_drag_threshold(-DRAG_THRESHOLD - 1, 0));
+        assert!(beyond_drag_threshold(0, DRAG_THRESHOLD + 1));
+    }
+
+    #[test]
+    fn shown_tabs_start_one_label_and_gap_apart() {
+        let strip = scrolled();
+        assert_eq!(tab_left(5, &strip, GAP), Some(0));
+        assert_eq!(tab_left(7, &strip, GAP), Some(202));
+        assert_eq!(tab_left(8, &strip, GAP), Some(303));
+        assert_eq!(tab_left(4, &strip, GAP), None);
+        assert_eq!(tab_left(9, &strip, GAP), None);
+    }
+
+    #[test]
+    fn the_tab_under_the_pointer_is_found_by_its_label() {
+        let strip = scrolled();
+        assert_eq!(tab_at(0, &strip, GAP), Some(5));
+        assert_eq!(tab_at(99, &strip, GAP), Some(5));
+        assert_eq!(tab_at(100, &strip, GAP), None, "the gap");
+        assert_eq!(tab_at(101, &strip, GAP), Some(6));
+        assert_eq!(tab_at(402, &strip, GAP), Some(8));
+        assert_eq!(tab_at(403, &strip, GAP), None, "the + button's gap");
+        assert_eq!(tab_at(-1, &strip, GAP), None);
+        assert_eq!(tab_at(10, &layout(944, 0, 0), GAP), None);
+    }
+
+    #[test]
+    fn a_dragged_tab_goes_where_its_center_is() {
+        let strip = scrolled();
+        // Held at its middle: the pointer is the label's center.
+        assert_eq!(drag_index(50, 50, &strip, GAP), Some(5));
+        assert_eq!(drag_index(100, 50, &strip, GAP), Some(5));
+        assert_eq!(drag_index(101, 50, &strip, GAP), Some(6));
+        // Held near its left edge: it moves once its center (40 px right of the pointer)
+        // reaches the next slot.
+        assert_eq!(drag_index(60, 10, &strip, GAP), Some(5));
+        assert_eq!(drag_index(61, 10, &strip, GAP), Some(6));
+        // It stays among the shown tabs.
+        assert_eq!(drag_index(-300, 50, &strip, GAP), Some(5));
+        assert_eq!(drag_index(2000, 50, &strip, GAP), Some(8));
+        assert_eq!(drag_index(10, 50, &layout(944, 0, 0), GAP), None);
     }
 
     #[test]

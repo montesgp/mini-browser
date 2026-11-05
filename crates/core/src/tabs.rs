@@ -50,11 +50,21 @@ impl Tabs {
         Self::default()
     }
 
-    /// Opens an empty tab right after the active one (or at the end) and activates it.
+    /// Opens an empty tab right after the active one (or at the end) and activates it, like a
+    /// page's popup.
     pub fn open(&mut self) -> TabId {
+        let index = self.active.map_or(self.tabs.len(), |active| active + 1);
+        self.open_at(index)
+    }
+
+    /// Opens an empty tab at the end of the list and activates it, like `Ctrl/Cmd+T`.
+    pub fn open_at_end(&mut self) -> TabId {
+        self.open_at(self.tabs.len())
+    }
+
+    fn open_at(&mut self, index: usize) -> TabId {
         self.next_id += 1;
         let id = self.next_id;
-        let index = self.active.map_or(self.tabs.len(), |active| active + 1);
         self.tabs.insert(
             index,
             Tab {
@@ -64,6 +74,23 @@ impl Tabs {
         );
         self.active = Some(index);
         id
+    }
+
+    /// Moves `id` to position `to` (clamped to the last one); the other tabs keep their order
+    /// and the active tab stays active. Returns whether the order changed.
+    pub fn move_tab(&mut self, id: TabId, to: usize) -> bool {
+        let Some(from) = self.index_of(id) else {
+            return false;
+        };
+        let to = to.min(self.tabs.len() - 1);
+        if from == to {
+            return false;
+        }
+        let active = self.active().map(|tab| tab.id);
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+        self.active = active.and_then(|active| self.index_of(active));
+        true
     }
 
     /// Closes `id`. Closing the active tab activates its right neighbor, else its left one.
@@ -147,7 +174,8 @@ impl Tabs {
         self.tabs.is_empty()
     }
 
-    fn index_of(&self, id: TabId) -> Option<usize> {
+    /// The position of `id` in the list.
+    pub fn index_of(&self, id: TabId) -> Option<usize> {
         self.tabs.iter().position(|tab| tab.id == id)
     }
 
@@ -202,6 +230,53 @@ mod tests {
         assert_eq!(ids(&tabs), vec![a, b, d, c]);
         assert_eq!(active_id(&tabs), Some(d));
         assert_eq!(tabs.len(), 4);
+    }
+
+    #[test]
+    fn open_at_end_appends_and_activates_the_tab() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        let d = tabs.open_at_end();
+        assert_eq!(ids(&tabs), vec![a, b, c, d]);
+        assert_eq!(active_id(&tabs), Some(d));
+        assert_eq!(tabs.index_of(d), Some(3));
+        let mut empty = Tabs::new();
+        let first = empty.open_at_end();
+        assert_eq!(ids(&empty), vec![first]);
+        assert_eq!(active_id(&empty), Some(first));
+    }
+
+    #[test]
+    fn moving_a_tab_keeps_the_others_in_order_and_the_active_tab_active() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        assert!(tabs.move_tab(a, 2));
+        assert_eq!(ids(&tabs), vec![b, c, a]);
+        assert_eq!(active_id(&tabs), Some(b));
+        assert!(tabs.move_tab(b, 1));
+        assert_eq!(ids(&tabs), vec![c, b, a]);
+        assert_eq!(active_id(&tabs), Some(b));
+        assert!(tabs.move_tab(a, 0));
+        assert_eq!(ids(&tabs), vec![a, c, b]);
+        assert_eq!(active_id(&tabs), Some(b));
+        assert_eq!(tabs.index_of(b), Some(2));
+    }
+
+    #[test]
+    fn moving_past_the_end_puts_the_tab_last() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        assert!(tabs.move_tab(a, 99));
+        assert_eq!(ids(&tabs), vec![b, c, a]);
+        assert_eq!(active_id(&tabs), Some(b));
+    }
+
+    #[test]
+    fn moving_to_the_same_place_or_an_unknown_tab_changes_nothing() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        assert!(!tabs.move_tab(b, 1));
+        assert!(!tabs.move_tab(c, 5));
+        assert!(!tabs.move_tab(99, 0));
+        assert_eq!(ids(&tabs), vec![a, b, c]);
+        assert_eq!(active_id(&tabs), Some(b));
+        assert_eq!(tabs.index_of(99), None);
     }
 
     #[test]

@@ -12,6 +12,8 @@ mod commands;
 pub mod data_dir;
 mod home;
 mod loading_line;
+#[cfg(target_os = "windows")]
+mod mouse_hook;
 mod settings_box;
 mod tab_strip;
 mod tabs;
