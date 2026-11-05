@@ -1,0 +1,23 @@
+# mini-browser tab handling and settings box placement
+
+Last round of owner feedback before v0.3.0: Chrome-like tab handling with the mouse (middle-click close, new tabs at the end, drag to reorder) and a settings box that closes with the mouse and no longer covers search fields.
+
+## Specs
+
+- **S1 — Middle click closes a tab.** User: "como pasa en los demas navegadores o al menos en chrome que la rueda central del mouse puede cerrar pestañas tambien." A middle click on a tab in the top bar closes that tab with the `×` / `Ctrl+W` rules. CEF Views reports no mouse button for button presses (L4 of `odd/tasks/home-page.md`), so this uses a mouse hook limited to the app's own UI thread/window on Windows; macOS and Linux keep the `×` only for now (documented).
+- **S2 — Close the settings box with the mouse.** User: "me gustaria que el stetings tenga una posibilidad de close con mouse. La que mas pro te parezca, o clickear fuera del container o que tenga un boton o cruz de close. Sino lo unico que la cierra es nuevamente el comando y queda bloqueando el buscador o alguna parte de alguna pagina." The settings box gets a small `×` in its header and closes when the user clicks outside it (on the page or the bar); `Esc` and `Ctrl/Cmd+,` keep working.
+- **S3 — Settings box out of the way.** User: "tratemos de establecer el panel mucho mas abajo para evitar superponer la barra de busqueda cuando la ventana esta minimizada. [...] quiza podamos establecerlo mucho mas abajo para que en ninguno de los dos casos superponga." (Screenshots: restored and maximized windows, the box centered a fifth of the way down covers Google's search field and the home page's field.) The box is anchored to the bottom-right corner of the page area with a small margin, in restored and maximized windows, so it does not cover search fields placed at the top or center of pages.
+- **S4 — New tabs at the end.** User: "cuando hago "+" para nueva pestania, no se agrega al final sino posterior a la ventana activa. Hagamos que se agregue al final". `Ctrl/Cmd+T`, the bar's `+` and the home card's "New tab" row add the tab at the end. Tabs that pages open (popups) and `--url` relaunch tabs keep opening right after the active tab (Chrome behavior for opened links).
+- **S5 — Drag tabs to reorder.** User: "pero que el usuario pueda arrastrar pestanias en la top bar tal como sucede con google chrome." Pressing a tab and dragging it left/right moves it among the visible tabs; releasing keeps the new order; a press without movement still activates the tab. Windows uses the same mouse hook as S1; macOS and Linux keep the order for now (documented).
+
+## Tasks
+
+- [ ] T1 — S2, S3: settings box `×`, close on outside click, bottom-right placement — worker — commit: —
+- [ ] T2 — S1, S4, S5: middle-click close, new tabs at the end, drag to reorder (tests for core logic, Windows functional checks) — worker — commit: —
+- [ ] T3 — S1–S5: independent verify on Windows — verify — evidence: —
+- [ ] T4 — PR(s), ci-gate, merge — inline — merge: —
+
+## Log
+
+- L1 (user, original request): "Excelente! Agregaria por ultimo algo mas y es como pasa en los demas navegadores o al menos en chrome que la rueda central del mouse puede cerrar pestaas tambien. Y ademas me gustaria que el stetings tenga una posibilidad de close con mouse. La que mas pro te parezca, o clickear fuera del container o que tenga un boton o cruz de close. Sino lo unico que la cierra es nuevamente el comando y queda bloqueando el buscador o alguna parte de alguna pagina. Ademas, tratemos de establecer el panel mucho mas abajo para evitar superponer la barra de busqueda cuando la ventana esta minimizada. Te paso imagenes de ejemplos con google servido y con la pestania nueva nuestra: [...] esas son con ventana minimizada. En max: [...] quiza podamos establecerlo mucho mas abajo para que en ninguno de los dos casos superponga. No se que te parece que puede ser la mejor opcion. Otro "problema" que detecte es que cuando hago "+" para nueva pestania, no se agrega al final sino posterior a la ventana activa. Hagamos que se agregue al final, pero que el usuario pueda arrastrar pestanias en la top bar tal como sucede con google chrome."
+- L2 (decisions, parent, as the owner asked for "la que más pro te parezca" / "qué te parece"): settings box closes with both a `×` and an outside click; anchored bottom-right (a fixed lower offset would still cover search fields on some sites); "minimizada" in the request means restored (not maximized). Middle click and drag use a Windows mouse hook scoped to the app's UI thread because CEF Views exposes neither; macOS/Linux are left for later and documented.
