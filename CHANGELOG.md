@@ -6,7 +6,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Added
 
-- A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse is over the strip where the bar sits, pushes the page down so it never covers it, and hides half a second after it leaves, so a shared screen stays clean.
+- A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse is over the strip where the bar sits, moves the page down so it never covers it (without resizing the page, so the page does not flash; its bottom edge is out of view while the bar shows), and hides half a second after it leaves, so a shared screen stays clean.
 - The bar shows for a moment when you open, close or switch tabs, so you see where you are, and says how many tabs do not fit (`+3`).
 - Clicking a tab in the `Auto` top bar hides the bar at once, so the page is whole again; it shows again once the mouse leaves the top and comes back. A `Pinned` bar stays.
 - A small `×` on the current tab and on the tab under the mouse closes that tab, following the `Ctrl/Cmd+W` rules. Closing the last tab leaves a home page; the app quits only from the window's close button, `Alt+F4`, `Ctrl/Cmd+Q` or the home page's quit row.

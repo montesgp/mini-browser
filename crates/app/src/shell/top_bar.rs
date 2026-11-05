@@ -2,7 +2,10 @@
 //! the minimize, maximize/restore and close buttons (right-aligned, or left-aligned on macOS).
 //! Pinned, it always shows. In auto mode it shows while the pointer is over the bar's area (the
 //! frame's top side and the bar's height), and briefly when the tabs change; choosing a tab
-//! hides it at once. Shown, it pushes the page down by its height; hidden, nothing of it shows.
+//! hides it at once. Pinned, it pushes the page down by its height. In auto mode the page moves
+//! down by that height without resizing (its bottom is cut off while the bar shows), so the page
+//! does not lay out and repaint again each time the bar comes and goes. Hidden, nothing of it
+//! shows.
 //! A timer checks the pointer, because Views reports no pointer moves over the page. The rules
 //! live in `mini_core::top_bar`.
 
@@ -11,7 +14,7 @@ use std::{cell::RefCell, time::Instant};
 use cef::*;
 use mini_core::{
     settings::TopBarMode,
-    top_bar::{self, TopBar},
+    top_bar::{self, Room, TopBar},
 };
 
 use super::{
@@ -75,7 +78,7 @@ enum Action {
 struct Bar {
     window: Window,
     controller: OverlayController,
-    /// Holds the page below the shown bar.
+    /// Holds the page below the pinned bar.
     spacer: Panel,
     pin: LabelButton,
     maximize: LabelButton,
@@ -346,10 +349,14 @@ fn update() {
         return;
     };
     let state = i32::from(visible);
-    if controller.is_visible() != state || spacer.is_visible() != state {
-        // The spacer pushes the page down below the shown bar, so the bar never covers it.
-        spacer.set_visible(state);
+    let room = top_bar::room(mode, visible);
+    let pushed = i32::from(room == Room::Push);
+    if controller.is_visible() != state || spacer.is_visible() != pushed {
+        // The bar never covers the page: the spacer pushes it down below the pinned bar, and
+        // the auto-mode bar moves it down without resizing it, which would make it repaint.
+        spacer.set_visible(pushed);
         window.layout();
+        window::shift_pages(if room == Room::Shift { STRIP_HEIGHT } else { 0 });
         if visible {
             reposition();
             tab_strip::fit();
