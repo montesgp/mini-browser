@@ -17,6 +17,8 @@ use super::{
 };
 
 const WIDTH: i32 = 280;
+/// Space between the box and the bottom-right corner of the page area.
+const MARGIN: i32 = 16;
 const INSET: i32 = 14;
 const EDGE: i32 = 1;
 const DIM_TEXT_COLOR: u32 = 0xFF8C_8C8C;
@@ -29,6 +31,8 @@ const FONT: &str = "Segoe UI, Helvetica, Arial, 14px";
 const TITLE_FONT: &str = "Segoe UI, Helvetica, Arial, Bold 15px";
 /// The `−` and `+` glyphs; at this size their strokes look equally heavy.
 const STEP_FONT: &str = "Segoe UI, Helvetica, Arial, 20px";
+const CLOSE_FONT: &str = "Segoe UI, Helvetica, Arial, 18px";
+const CLOSE_SIZE: i32 = 24;
 const VALUE_WIDTH: i32 = 56;
 const BUTTON_SIZE: i32 = 28;
 const MODE_WIDTH: i32 = 64;
@@ -46,6 +50,7 @@ struct SettingsBox {
     plus: LabelButton,
     auto: LabelButton,
     pinned: LabelButton,
+    close: LabelButton,
     not_saved: LabelButton,
     settings: Settings,
     path: PathBuf,
@@ -73,6 +78,7 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
     }));
     let (
         Some(title),
+        Some(close),
         Some(label),
         Some(minus),
         Some(value),
@@ -83,6 +89,7 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         Some(not_saved),
     ) = (
         text("Settings", TITLE_FONT, TEXT_COLOR),
+        close_button(),
         text("Padding", FONT, DIM_TEXT_COLOR),
         step_button("\u{2212}", -1),
         text("", FONT, TEXT_COLOR),
@@ -102,8 +109,8 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         height: BUTTON_SIZE,
     }));
 
-    panel.add_child_view(Some(&mut View::from(&title)));
     for (label, controls) in [
+        (&title, [&close].as_slice()),
         (&label, [&minus, &value, &plus].as_slice()),
         (&bar_label, [&auto, &pinned].as_slice()),
     ] {
@@ -131,6 +138,7 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         plus,
         auto,
         pinned,
+        close,
         not_saved,
         settings,
         path,
@@ -214,6 +222,28 @@ fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
     } else {
         "Increase padding"
     })));
+    Some(button)
+}
+
+/// The `×` in the header that closes the box.
+fn close_button() -> Option<LabelButton> {
+    let button = label_button_create(
+        Some(&mut SettingsButtonDelegate::new(Choice::Close)),
+        Some(&CefString::from("\u{00D7}")),
+    )?;
+    button.set_font_list(Some(&CefString::from(CLOSE_FONT)));
+    button.set_enabled_text_colors(DIM_TEXT_COLOR);
+    button.set_text_color(ButtonState::HOVERED, TEXT_COLOR);
+    button.set_text_color(ButtonState::PRESSED, TEXT_COLOR);
+    button.set_horizontal_alignment(HorizontalAlignment::CENTER);
+    let size = Size {
+        width: CLOSE_SIZE,
+        height: CLOSE_SIZE,
+    };
+    button.set_minimum_size(Some(&size));
+    button.set_maximum_size(Some(&size));
+    button.set_focusable(1);
+    button.set_accessible_name(Some(&CefString::from("Close settings")));
     Some(button)
 }
 
@@ -430,6 +460,44 @@ fn hide() {
     }
 }
 
+/// Closes the open box once the keyboard focus has left it for another view of the active
+/// window, as a click on the page or on a tab moves it there. Clicks inside the box keep the
+/// focus on its buttons; while the window is inactive the box stays open.
+fn close_if_focus_left() {
+    let Some((window, buttons)) = SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box.as_ref().map(|settings_box| {
+            (
+                settings_box.window.clone(),
+                [
+                    settings_box.minus.clone(),
+                    settings_box.plus.clone(),
+                    settings_box.auto.clone(),
+                    settings_box.pinned.clone(),
+                    settings_box.close.clone(),
+                ],
+            )
+        })
+    }) else {
+        return;
+    };
+    if !is_visible() || window.is_active() == 0 {
+        return;
+    }
+    if buttons.iter().all(|button| button.has_focus() == 0) {
+        close();
+    }
+}
+
+wrap_task! {
+    struct CloseIfFocusLeft;
+
+    impl Task {
+        fn execute(&self) {
+            close_if_focus_left();
+        }
+    }
+}
+
 /// Closes the box without moving the focus. Returns whether the box exists.
 pub fn close() -> bool {
     let controller = SETTINGS_BOX.with_borrow(|settings_box| {
@@ -471,23 +539,21 @@ pub fn handle_escape(event: Option<&KeyEvent>) -> bool {
     false
 }
 
-/// Centers the box horizontally, a fifth of the way down the window. Call it whenever the
-/// window is resized.
+/// Puts the box in the bottom-right corner of the page area, out of the way of search fields at
+/// the top or center of pages. Call it whenever the window is resized.
 pub fn reposition() {
-    let Some((window, controller, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box.as_ref().map(|settings_box| {
-            (
-                settings_box.window.clone(),
-                settings_box.controller.clone(),
-                settings_box.panel.clone(),
-            )
-        })
+    let Some((controller, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
+        settings_box
+            .as_ref()
+            .map(|settings_box| (settings_box.controller.clone(), settings_box.panel.clone()))
     }) else {
         return;
     };
-    let size = window.size();
+    let Some(area) = window::page_area() else {
+        return;
+    };
     let height = panel.preferred_size().height;
-    let bounds = layout::floating_box(size.width, size.height, WIDTH, 0, height);
+    let bounds = layout::corner_box(area, WIDTH, height, MARGIN);
     controller.set_bounds(Some(&window::cef_rect(bounds)));
 }
 
@@ -500,6 +566,8 @@ enum Choice {
     Padding(i32),
     /// The top bar mode of an `Auto` / `Pinned` button.
     TopBar(TopBarMode),
+    /// The `×` that closes the box.
+    Close,
 }
 
 wrap_button_delegate! {
@@ -507,7 +575,13 @@ wrap_button_delegate! {
         choice: Choice,
     }
 
-    impl ViewDelegate {}
+    impl ViewDelegate {
+        fn on_blur(&self, _view: Option<&mut View>) {
+            // The newly focused view is known once Views is done moving the focus.
+            let mut task = CloseIfFocusLeft::new();
+            post_task(ThreadId::UI, Some(&mut task));
+        }
+    }
 
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
@@ -515,6 +589,7 @@ wrap_button_delegate! {
                 Choice::None => {}
                 Choice::Padding(steps) => step(steps),
                 Choice::TopBar(mode) => set_top_bar(mode),
+                Choice::Close => hide(),
             }
         }
     }

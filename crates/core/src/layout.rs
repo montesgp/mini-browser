@@ -73,6 +73,21 @@ pub fn floating_box(
     }
 }
 
+/// Bounds of a floating box `box_height` pixels tall in the bottom-right corner of the page
+/// `area`, `margin` pixels from its right and bottom sides, at most `max_width` wide and keeping
+/// `margin` free on its left. A box taller than the area keeps its top `margin` below the area's
+/// top, so its header stays visible. It stays at least one pixel wide however narrow the area.
+pub fn corner_box(area: Rect, max_width: i32, box_height: i32, margin: i32) -> Rect {
+    let width = max_width.min(area.width - 2 * margin).max(1);
+    let bottom = area.y + area.height - margin;
+    Rect {
+        x: area.x + area.width - margin - width,
+        y: (bottom - box_height).max(area.y + margin),
+        width,
+        height: box_height,
+    }
+}
+
 /// Bounds of a `width` × `height` box centered in a window of `window_width` × `window_height`.
 pub fn centered_box(window_width: i32, window_height: i32, width: i32, height: i32) -> Rect {
     Rect {
@@ -176,6 +191,37 @@ mod tests {
     fn a_floating_box_stays_one_pixel_wide_in_tiny_windows() {
         assert_eq!(floating_box(40, 10, 640, 32, 48), rect(19, 2, 1, 48));
         assert_eq!(floating_box(0, 0, 640, 32, 48).width, 1);
+    }
+
+    #[test]
+    fn a_corner_box_sits_in_the_bottom_right_corner_of_the_page_area() {
+        // A restored 1280 x 800 window with an 8 px frame.
+        assert_eq!(
+            corner_box(rect(8, 8, 1264, 784), 280, 200, 16),
+            rect(976, 576, 280, 200)
+        );
+        // A maximized window without a frame.
+        assert_eq!(
+            corner_box(rect(0, 0, 1920, 1032), 280, 200, 16),
+            rect(1624, 816, 280, 200)
+        );
+    }
+
+    #[test]
+    fn a_corner_box_narrows_to_keep_its_margins_in_narrow_page_areas() {
+        assert_eq!(
+            corner_box(rect(8, 8, 200, 584), 280, 200, 16),
+            rect(24, 376, 168, 200)
+        );
+        assert_eq!(corner_box(rect(0, 0, 10, 10), 280, 200, 16).width, 1);
+    }
+
+    #[test]
+    fn a_corner_box_taller_than_the_page_area_keeps_its_top_inside_it() {
+        assert_eq!(
+            corner_box(rect(0, 40, 800, 100), 280, 200, 16),
+            rect(504, 56, 280, 200)
+        );
     }
 
     #[test]

@@ -70,6 +70,18 @@ pub fn padding() -> u32 {
     FRAME.with_borrow(|frame| frame.as_ref().map_or(0, |frame| frame.inset))
 }
 
+/// The bounds of the page area, inside the padding frame and below the pinned top bar, in
+/// window coordinates.
+pub fn page_area() -> Option<layout::Rect> {
+    let bounds = FRAME.with_borrow(|frame| frame.as_ref().map(|frame| frame.content.bounds()))?;
+    Some(layout::Rect {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+    })
+}
+
 /// Changes the saved width of the padding frame and lays the window out again.
 pub fn set_padding(padding: u32) {
     FRAME.with_borrow_mut(|frame| {
