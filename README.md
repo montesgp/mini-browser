@@ -28,9 +28,9 @@ Get the file for your computer from the **[latest release](https://github.com/mo
 | Mac (Apple Silicon) | `…-macos-arm64.zip` | Extract it, move `minibrowser.app` to Applications and open it. |
 | Linux | `…-linux-x64.tar.gz` | Extract it and run `./minibrowser`. |
 
-The first time, your system may warn you because the app is not signed by a paid certificate yet:
+The first time, your system may warn you because the app is not code-signed yet (see [Code signing policy](#code-signing-policy)):
 
-- **Windows:** "Windows protected your PC" → **More info → Run anyway**.
+- **Windows:** Microsoft Defender SmartScreen shows "Windows protected your PC" for new unsigned apps. Click **More info → Run anyway**. To skip the prompt, before extracting right-click the downloaded `.zip` → **Properties** → tick **Unblock** → **OK**. You can check the file first, see [Verifying downloads](#verifying-downloads).
 - **Mac:** if it will not open, allow it under **System Settings → Privacy & Security**.
 - **Linux:** if it stops with a sandbox error, see [Linux sandbox setup](#linux-sandbox-setup).
 
@@ -221,6 +221,14 @@ On distributions that restrict unprivileged user namespaces (for example Ubuntu 
 ```sh
 sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox
 ```
+
+## Code signing policy
+
+Windows releases are not code-signed yet. We have applied to [SignPath Foundation](https://signpath.org) for free code signing for open-source projects; while that is pending, every release can be checked with its checksums and build-provenance attestation (see [Verifying downloads](#verifying-downloads)). Once approved, this section will read: Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Builds:** every release archive is built from this repository by [`release.yml`](.github/workflows/release.yml) on GitHub-hosted runners, from a tag on `main`.
+- **Team roles:** committers and reviewers: [@montesgp](https://github.com/montesgp); approvers (who approve each release for signing): [@montesgp](https://github.com/montesgp). Changes from anyone else land only through reviewed pull requests.
+- **Privacy:** mini-browser has no telemetry, analytics or accounts, and its own code sends nothing anywhere you did not ask for. It loads the pages you open; text you type that is not an address is sent as a search to the configured search engine (Google by default, under [Google's privacy policy](https://policies.google.com/privacy)). Its web engine, [CEF](https://bitbucket.org/chromiumembedded/cef)/Chromium, may make the network requests that browsing itself needs, such as certificate checks.
 
 ## Verifying downloads
 
