@@ -286,6 +286,22 @@ pub fn with_active_browser(f: impl FnOnce(&Browser)) {
 }
 
 /// Whether the active tab shows the home page.
+/// Runs `f` with the browser of every tab that shows the home page.
+pub fn with_home_browsers(mut f: impl FnMut(&Browser)) {
+    let browsers: Vec<Browser> = with_shell(|shell| {
+        shell
+            .views
+            .iter()
+            .filter(|(id, _)| shell.tabs.get(*id).is_some_and(|tab| tab.is_home()))
+            .filter_map(|(_, view)| view.browser())
+            .collect()
+    })
+    .unwrap_or_default();
+    for browser in &browsers {
+        f(browser);
+    }
+}
+
 pub fn active_is_home() -> bool {
     with_shell(|shell| shell.tabs.active().is_some_and(|tab| tab.is_home())).unwrap_or(false)
 }

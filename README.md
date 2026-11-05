@@ -47,12 +47,12 @@ Keep the extracted folder together: the app needs the files next to it.
 | Pin or unpin the top bar (tabs and window buttons) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Back / forward | `Alt+Left` / `Alt+Right` | `Cmd+[` / `Cmd+]` |
 | Reload | `Ctrl+R` | `Cmd+R` |
-| Settings: frame size, top bar `Auto` or `Pinned` | `Ctrl+,` | `Cmd+,` |
+| Settings: frame size (`+` and `-` while open), top bar `Auto` or `Pinned` | `Ctrl+,` | `Cmd+,` |
 | Quit | `Ctrl+Q` | `Cmd+Q` |
 
 Drag the dark frame to move the window, double-click it to maximize or restore, and drag its edges to resize. A maximized window has no frame, like any other window; restored, the frame comes back. Type a website (`github.com`) or any words to search.
 
-- **The home page lists every shortcut.** The small keyboard button next to its field opens a card with each shortcut (`Ctrl` or `Cmd` for your system) and its action; click a row to run it, use `−` and `+` to change the frame size, or click the top bar row to switch between `Auto` and `Pinned`. A click outside the card or `Esc` closes it, and it stays open or closed as you left it. `Tab`, `Enter` and `Space` work too.
+- **The home page lists every shortcut.** The small keyboard button next to its field opens a card with each shortcut (`Ctrl` or `Cmd` for your system) and its action; click a row to run it, use `−` and `+` to change the frame size, or click the top bar row to switch between `Auto` and `Pinned`. A click outside the card or `Esc` closes it, and it stays open or closed as you left it. It shows the current settings even when you change them elsewhere, like with the bar's pin. `Tab`, `Enter` and `Space` work too.
 - **Back from the first page returns to the home page**, with `Alt+Left` (`Cmd+[` on Mac), the mouse back button or the right-click menu. Tabs that start on a page (`--url=…` or a pop-up) have nothing to go back to.
 - **A thin blue line moves along the top of the frame** while the page loads.
 - **The window is always called `mini-browser`**, so the taskbar, `Alt+Tab` and a meeting's share picker never show the title of the page you have open.

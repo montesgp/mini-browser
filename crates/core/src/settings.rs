@@ -148,9 +148,30 @@ fn is_valid_search_template(template: &str) -> bool {
         && template.contains(QUERY_PLACEHOLDER)
 }
 
+/// The padding step a key makes while the settings box is open: `+` (the main row's `=+` key
+/// or the keypad's) widens the frame, `-` narrows it. `key_code` is the Windows virtual-key
+/// code that CEF reports on every platform.
+pub fn padding_step_for_key(key_code: i32) -> Option<i32> {
+    match key_code {
+        0xBB | 0x6B => Some(1),
+        0xBD | 0x6D => Some(-1),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plus_and_minus_keys_step_the_padding() {
+        assert_eq!(padding_step_for_key(0xBB), Some(1)); // `=+`
+        assert_eq!(padding_step_for_key(0x6B), Some(1)); // keypad `+`
+        assert_eq!(padding_step_for_key(0xBD), Some(-1)); // `-_`
+        assert_eq!(padding_step_for_key(0x6D), Some(-1)); // keypad `-`
+        assert_eq!(padding_step_for_key(0x20), None); // Space
+        assert_eq!(padding_step_for_key(0x41), None); // A
+    }
 
     fn scratch_dir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir()

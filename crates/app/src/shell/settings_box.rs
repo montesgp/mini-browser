@@ -7,12 +7,12 @@ use std::{cell::RefCell, path::PathBuf};
 use cef::*;
 use mini_core::{
     layout,
-    settings::{PADDING_MAX, PADDING_MIN, Settings, TopBarMode},
+    settings::{self, PADDING_MAX, PADDING_MIN, Settings, TopBarMode},
 };
 
 use super::{
     address_box::{self, BORDER_COLOR, BOX_COLOR, TEXT_COLOR},
-    tabs, top_bar,
+    home, tabs, top_bar,
     window::{self, DarkPanelDelegate},
 };
 
@@ -382,6 +382,8 @@ fn change(new: impl FnOnce(&Settings) -> Settings) -> Option<Settings> {
         );
     }
     not_saved.set_visible(saved.is_err().into());
+    // Open home pages show the settings in their commands card.
+    home::refresh_state();
     Some(settings)
 }
 
@@ -439,6 +441,22 @@ pub fn close() -> bool {
         controller.set_visible(0);
     }
     controller.is_some()
+}
+
+/// While the box is open, `+` and `-` widen and narrow the frame. Returns whether the event
+/// was used.
+pub fn handle_step_keys(event: Option<&KeyEvent>) -> bool {
+    let Some(steps) = event
+        .filter(|event| event.type_ == KeyEventType::RAWKEYDOWN)
+        .and_then(|event| settings::padding_step_for_key(event.windows_key_code))
+    else {
+        return false;
+    };
+    if !is_visible() {
+        return false;
+    }
+    step(steps);
+    true
 }
 
 /// Closes the open box on `Esc`. Returns whether the event was used.

@@ -396,7 +396,10 @@ wrap_window_delegate! {
         }
 
         fn on_key_event(&self, _window: Option<&mut Window>, event: Option<&KeyEvent>) -> i32 {
-            (settings_box::handle_escape(event) || commands::handle_event(event)).into()
+            (settings_box::handle_escape(event)
+                || settings_box::handle_step_keys(event)
+                || commands::handle_event(event))
+                .into()
         }
 
         fn on_theme_colors_changed(&self, window: Option<&mut Window>, _chrome_theme: i32) {
