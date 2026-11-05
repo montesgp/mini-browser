@@ -37,6 +37,8 @@
   }
   // The app calls it for `Ctrl/Cmd+L` on this page.
   window.miniFocusAddress = focusAddress;
+  // The app calls it when a setting changes elsewhere (the bar's pin, the settings box).
+  window.miniRefreshState = () => request('state');
 
   /** The rows of the card: keys, action and what a press does. */
   function shortcuts() {

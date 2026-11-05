@@ -1,9 +1,9 @@
 //! When the top bar shows. Pinned, always. In auto mode, while the pointer is over the bar's
 //! area (the frame's top side and the bar's height, across the window), for a moment after it
-//! leaves, and for a moment after the tabs change. The shown bar pushes the page down, so the
-//! area that reveals it is the area it then covers. Choosing a tab in the auto-mode bar hides it
-//! at once, and it stays hidden until the pointer leaves the bar's area and comes back, or the
-//! tabs change again. The caller passes the current time, so the clock is under its control.
+//! leaves, and for a moment after the tabs change. The page makes room for the shown bar (see
+//! [`room`]), so the area that reveals the bar is the area it then takes. Choosing a tab in the
+//! auto-mode bar hides it at once, and it stays hidden until the pointer leaves the bar's area
+//! and comes back, or the tabs change again. The caller passes the current time, so the clock is under its control.
 
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,28 @@ pub const HIDE_DELAY: Duration = Duration::from_millis(500);
 pub const FLASH: Duration = Duration::from_millis(1500);
 /// The smallest band at the top of the window that reveals the bar.
 pub const REVEAL_MIN: i32 = 6;
+
+/// How the page makes room for the top bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Room {
+    /// The bar is hidden; the page fills the window.
+    None,
+    /// The page shrinks below the bar, whole.
+    Push,
+    /// The page moves down below the bar at its full size, so it does not lay out and repaint
+    /// again; its bottom is cut off while the bar shows.
+    Shift,
+}
+
+/// How the page makes room for the bar in `mode` while it is `shown`. A pinned bar stays, so the
+/// page shrinks below it once; the auto-mode bar comes and goes, so the page only moves.
+pub fn room(mode: TopBarMode, shown: bool) -> Room {
+    match (shown, mode) {
+        (false, _) => Room::None,
+        (true, TopBarMode::Pinned) => Room::Push,
+        (true, TopBarMode::Auto) => Room::Shift,
+    }
+}
 
 /// Where the pointer is, relative to the top bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +124,22 @@ mod tests {
 
     fn ms(millis: u64) -> Duration {
         Duration::from_millis(millis)
+    }
+
+    #[test]
+    fn a_pinned_bar_pushes_the_page_down() {
+        assert_eq!(room(TopBarMode::Pinned, true), Room::Push);
+    }
+
+    #[test]
+    fn an_auto_bar_shifts_the_page_without_resizing_it() {
+        assert_eq!(room(TopBarMode::Auto, true), Room::Shift);
+    }
+
+    #[test]
+    fn a_hidden_bar_leaves_the_page_alone() {
+        assert_eq!(room(TopBarMode::Auto, false), Room::None);
+        assert_eq!(room(TopBarMode::Pinned, false), Room::None);
     }
 
     #[test]

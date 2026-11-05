@@ -50,6 +50,20 @@ pub fn focus_address_field() {
     });
 }
 
+/// Makes every open home page read the settings again, so its commands card shows the current
+/// top bar mode and padding at once.
+pub fn refresh_state() {
+    tabs::with_home_browsers(|browser| {
+        if let Some(frame) = browser.main_frame() {
+            frame.execute_java_script(
+                Some(&CefString::from("window.miniRefreshState?.()")),
+                Some(&CefString::from(home::HOME_URL)),
+                0,
+            );
+        }
+    });
+}
+
 /// A reply: status, MIME type and body, plus how much of the body was read.
 #[derive(Clone)]
 struct Reply {

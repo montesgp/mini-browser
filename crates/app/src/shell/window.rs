@@ -123,6 +123,31 @@ pub fn overhang(window: &Window) -> i32 {
     })
 }
 
+/// Moves the tabs' pages down by `offset` pixels without resizing them, so they do not lay out
+/// and repaint again; the container cuts off their bottom. 0 puts them back.
+pub fn shift_pages(offset: i32) {
+    let Some(container) = FRAME.with_borrow(|frame| frame.as_ref()?.content.as_panel()) else {
+        return;
+    };
+    container.set_to_box_layout(Some(&pages_layout(offset)));
+    container.layout();
+}
+
+/// Box layout that gives the visible page the container's size, `offset` pixels down. The
+/// negative bottom inset keeps the page's height while it moves.
+fn pages_layout(offset: i32) -> BoxLayoutSettings {
+    BoxLayoutSettings {
+        inside_border_insets: Insets {
+            top: offset,
+            bottom: -offset,
+            ..Default::default()
+        },
+        cross_axis_alignment: AxisAlignment::STRETCH,
+        default_flex: 1,
+        ..Default::default()
+    }
+}
+
 /// Gives the frame the width it has for the window's state: the saved one while the window is
 /// restored, none while it is maximized. Call it whenever the window's bounds change.
 fn fit_frame() {
@@ -336,7 +361,7 @@ wrap_window_delegate! {
             else {
                 return;
             };
-            container.set_to_fill_layout();
+            container.set_to_box_layout(Some(&pages_layout(0)));
 
             window.set_title(Some(&CefString::from(WINDOW_TITLE)));
             if let Some(mut icon) = icon_image(&[(1.0, ICON_16_PNG), (2.0, ICON_32_PNG)]) {
@@ -396,7 +421,10 @@ wrap_window_delegate! {
         }
 
         fn on_key_event(&self, _window: Option<&mut Window>, event: Option<&KeyEvent>) -> i32 {
-            (settings_box::handle_escape(event) || commands::handle_event(event)).into()
+            (settings_box::handle_escape(event)
+                || settings_box::handle_step_keys(event)
+                || commands::handle_event(event))
+                .into()
         }
 
         fn on_theme_colors_changed(&self, window: Option<&mut Window>, _chrome_theme: i32) {

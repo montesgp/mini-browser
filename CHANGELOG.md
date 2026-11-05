@@ -6,11 +6,13 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Added
 
-- A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse is over the strip where the bar sits, pushes the page down so it never covers it, and hides half a second after it leaves, so a shared screen stays clean.
+- A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse is over the strip where the bar sits, moves the page down so it never covers it (without resizing the page, so the page does not flash; its bottom edge is out of view while the bar shows), and hides half a second after it leaves, so a shared screen stays clean.
 - The bar shows for a moment when you open, close or switch tabs, so you see where you are, and says how many tabs do not fit (`+3`).
 - Clicking a tab in the `Auto` top bar hides the bar at once, so the page is whole again; it shows again once the mouse leaves the top and comes back. A `Pinned` bar stays.
 - A small `×` on the current tab and on the tab under the mouse closes that tab, following the `Ctrl/Cmd+W` rules. Closing the last tab leaves a home page; the app quits only from the window's close button, `Alt+F4`, `Ctrl/Cmd+Q` or the home page's quit row.
 - A `+` after the last tab opens a new tab, and a pin in the bar switches it between `Auto` and `Pinned`.
+- While the settings box is open, `+` and `-` widen and narrow the frame.
+- The home page's commands card follows setting changes made elsewhere (the bar's pin, the settings box, `Ctrl/Cmd+Shift+F`) at once.
 - A "Top bar" setting, `Auto` or `Pinned`, in the settings box (`Ctrl/Cmd+,`), saved in `settings.json` as `topBar`. `Pinned` keeps the bar visible with the page below it. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change.
 - A dark home page (`mini://home/`) in every new tab: a centered field to type an address or a search, and a keyboard button that opens a card with every shortcut. Click a row to run it: new tab, close tab, next or previous tab, back, forward, reload, top bar `Auto`/`Pinned`, padding `−`/`+`, quit. Only the app opens this page; web pages cannot link to it, frame it, redirect to it or ask it to run commands.
 
