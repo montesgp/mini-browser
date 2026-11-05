@@ -44,6 +44,7 @@ Keep the extracted folder together: the app needs the files next to it.
 | Open a new tab | `Ctrl+T` | `Cmd+T` |
 | Close the tab (the last one closes the window) | `Ctrl+W` | `Cmd+W` |
 | Switch tabs | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Go to tab 1 to 8, or the last tab | `Ctrl+1` … `Ctrl+8`, `Ctrl+9` | `Cmd+1` … `Cmd+8`, `Cmd+9` |
 | Pin or unpin the top bar (tabs and window buttons) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Back / forward | `Alt+Left` / `Alt+Right` | `Cmd+[` / `Cmd+]` |
 | Reload | `Ctrl+R` | `Cmd+R` |

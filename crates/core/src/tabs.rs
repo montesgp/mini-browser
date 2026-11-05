@@ -166,6 +166,17 @@ impl Tabs {
         self.tabs.iter()
     }
 
+    /// The tab at 1-based `position`, if there is one.
+    pub fn at_position(&self, position: usize) -> Option<TabId> {
+        let index = position.checked_sub(1)?;
+        self.tabs.get(index).map(|tab| tab.id)
+    }
+
+    /// The last tab, if any.
+    pub fn last(&self) -> Option<TabId> {
+        self.tabs.last().map(|tab| tab.id)
+    }
+
     pub fn len(&self) -> usize {
         self.tabs.len()
     }
@@ -196,6 +207,18 @@ impl Tabs {
 mod tests {
     use super::*;
     use crate::home::HOME_URL;
+
+    #[test]
+    fn tabs_are_found_by_position_and_the_last_one() {
+        let (tabs, [a, b, c]) = three_with_middle_active();
+        assert_eq!(tabs.at_position(1), Some(a));
+        assert_eq!(tabs.at_position(3), Some(c));
+        assert_eq!(tabs.at_position(0), None);
+        assert_eq!(tabs.at_position(4), None);
+        assert_eq!(tabs.last(), Some(c));
+        assert_eq!(Tabs::new().last(), None);
+        let _ = b;
+    }
 
     fn ids(tabs: &Tabs) -> Vec<TabId> {
         tabs.iter().map(|tab| tab.id).collect()

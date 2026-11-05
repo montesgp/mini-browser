@@ -66,5 +66,7 @@ pub fn run(command: Command) {
         Command::Reload => tabs::with_active_browser(|browser| browser.reload()),
         Command::Quit => tabs::quit(),
         Command::OpenSettings => settings_box::toggle(),
+        Command::GoToTab(position) => tabs::activate_position(position),
+        Command::GoToLastTab => tabs::activate_last(),
     }
 }

@@ -104,6 +104,7 @@ fn command(name: &str, query: &str) -> Option<HomeCommand> {
         "reload" => run(Command::Reload),
         "top-bar" => run(Command::ToggleTopBar),
         "quit" => run(Command::Quit),
+        "last-tab" => run(Command::GoToLastTab),
         _ => None,
     }
 }
@@ -178,6 +179,7 @@ mod tests {
             ("reload", Command::Reload),
             ("top-bar", Command::ToggleTopBar),
             ("quit", Command::Quit),
+            ("last-tab", Command::GoToLastTab),
         ] {
             assert_eq!(
                 command_of(&format!("mini://home/cmd/{name}")),

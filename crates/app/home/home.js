@@ -51,6 +51,8 @@
       { keys: `${primary}+W`, label: 'Close tab', press: () => run('close-tab') },
       { keys: 'Ctrl+Tab', label: 'Next tab', press: () => run('next-tab') },
       { keys: 'Ctrl+Shift+Tab', label: 'Previous tab', press: () => run('previous-tab') },
+      { keys: `${primary}+1…8`, label: 'Go to that tab' },
+      { keys: `${primary}+9`, label: 'Last tab', press: () => run('last-tab') },
       { keys: mac ? 'Cmd+[' : 'Alt+Left', label: 'Back', press: () => run('back') },
       { keys: mac ? 'Cmd+]' : 'Alt+Right', label: 'Forward', press: () => run('forward') },
       { keys: `${primary}+R`, label: 'Reload', press: () => run('reload') },
@@ -97,10 +99,14 @@
     const focusId = focused && focused.dataset ? focused.dataset.focusId : undefined;
     rows.replaceChildren();
     shortcuts().forEach((shortcut, index) => {
-      const row = element(shortcut.padding ? 'div' : 'button', 'row');
+      const info = !shortcut.padding && !shortcut.press;
+      const row = element(shortcut.padding || info ? 'div' : 'button', info ? 'row info' : 'row');
       row.append(element('kbd', '', shortcut.keys));
       if (shortcut.padding) {
         row.append(paddingControls(index));
+      } else if (info) {
+        // A shortcut with no single action to run from here: listed, not clickable.
+        row.append(element('span', 'label', shortcut.label));
       } else {
         const label = element('span', 'label', shortcut.label);
         if (shortcut.mode) {

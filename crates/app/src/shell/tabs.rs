@@ -188,6 +188,20 @@ pub fn activate(id: TabId) {
     }
 }
 
+/// Activates the tab at 1-based `position` (`Ctrl/Cmd+1` to `8`); nothing when there is none.
+pub fn activate_position(position: usize) {
+    if let Some(id) = with_shell(|shell| shell.tabs.at_position(position)).flatten() {
+        activate(id);
+    }
+}
+
+/// Activates the last tab (`Ctrl/Cmd+9`).
+pub fn activate_last() {
+    if let Some(id) = with_shell(|shell| shell.tabs.last()).flatten() {
+        activate(id);
+    }
+}
+
 pub fn activate_next() {
     if with_shell(|shell| shell.tabs.activate_next())
         .flatten()

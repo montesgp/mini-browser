@@ -124,6 +124,10 @@ button:focus-visible {
   text-align: right;
 }
 
+.row.info {
+  cursor: default;
+}
+
 button.row:hover {
   background: var(--hover);
 }
