@@ -31,6 +31,10 @@ pub enum Command {
     Reload,
     Quit,
     OpenSettings,
+    /// Activates the tab at this 1-based position (`Ctrl/Cmd+1` to `8`).
+    GoToTab(usize),
+    /// Activates the last tab (`Ctrl/Cmd+9`).
+    GoToLastTab,
 }
 
 /// Modifier keys held during a key press. `command` is the macOS Command key.
@@ -91,6 +95,10 @@ pub fn command_for(
         }
     };
 
+    if let Some(command) = tab_number_command(windows_key_code, modifiers, primary) {
+        return Some(command);
+    }
+
     let bindings = [
         ((key::L, primary), Command::FocusAddress),
         ((key::T, primary), Command::NewTab),
@@ -110,9 +118,83 @@ pub fn command_for(
         .map(|(_, command)| command)
 }
 
+/// `Ctrl/Cmd` with a digit from the main row or the keypad: `1` to `8` go to that tab, `9` to
+/// the last one, as in Chrome.
+fn tab_number_command(
+    windows_key_code: i32,
+    modifiers: Modifiers,
+    primary: Modifiers,
+) -> Option<Command> {
+    if modifiers != primary {
+        return None;
+    }
+    let digit = match windows_key_code {
+        0x31..=0x39 => windows_key_code - 0x30,
+        0x61..=0x69 => windows_key_code - 0x60,
+        _ => return None,
+    };
+    Some(match digit {
+        9 => Command::GoToLastTab,
+        n => Command::GoToTab(usize::try_from(n).ok()?),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn primary_and_a_digit_go_to_a_tab() {
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        };
+        let command = Modifiers {
+            command: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(
+            command_for(0x31, ctrl, Platform::Other),
+            Some(Command::GoToTab(1))
+        );
+        assert_eq!(
+            command_for(0x38, ctrl, Platform::Other),
+            Some(Command::GoToTab(8))
+        );
+        assert_eq!(
+            command_for(0x39, ctrl, Platform::Other),
+            Some(Command::GoToLastTab)
+        );
+        assert_eq!(
+            command_for(0x62, ctrl, Platform::Other),
+            Some(Command::GoToTab(2))
+        ); // keypad 2
+        assert_eq!(
+            command_for(0x69, ctrl, Platform::Other),
+            Some(Command::GoToLastTab)
+        ); // keypad 9
+        assert_eq!(
+            command_for(0x33, command, Platform::MacOs),
+            Some(Command::GoToTab(3))
+        );
+        assert_eq!(command_for(0x30, ctrl, Platform::Other), None); // 0
+        assert_eq!(
+            command_for(0x31, Modifiers::default(), Platform::Other),
+            None
+        );
+        assert_eq!(
+            command_for(
+                0x31,
+                Modifiers {
+                    shift: true,
+                    ..ctrl
+                },
+                Platform::Other
+            ),
+            None
+        );
+        assert_eq!(command_for(0x31, ctrl, Platform::MacOs), None);
+    }
 
     const NONE: Modifiers = Modifiers {
         shift: false,

@@ -6,6 +6,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Added
 
+- `Ctrl+1` to `Ctrl+8` (`Cmd` on Mac) go to the tab at that position and `Ctrl+9` to the last tab, as in Chrome; the home page's commands card lists them.
 - A thin top bar with your tabs and minimize, maximize/restore and close buttons (on the left on macOS). It appears when the mouse is over the strip where the bar sits, moves the page down so it never covers it (without resizing the page, so the page does not flash; its bottom edge is out of view while the bar shows), and hides half a second after it leaves, so a shared screen stays clean.
 - The bar shows for a moment when you open, close or switch tabs, so you see where you are, and says how many tabs do not fit (`+3`).
 - Clicking a tab in the `Auto` top bar hides the bar at once, so the page is whole again; it shows again once the mouse leaves the top and comes back. A `Pinned` bar stays.
