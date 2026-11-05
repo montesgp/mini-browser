@@ -4,6 +4,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - `Ctrl+1` to `Ctrl+8` (`Cmd` on Mac) go to the tab at that position and `Ctrl+9` to the last tab, as in Chrome; the home page's commands card lists them.
@@ -78,6 +80,7 @@ First public release.
 - Chromium sandbox on every platform and an isolated profile in the app data directory.
 - Release builds for Windows (x64), macOS (Apple Silicon) and Linux (x64) on GitHub Releases.
 
-[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/montesgp/mini-browser/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/montesgp/mini-browser/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/montesgp/mini-browser/releases/tag/v0.1.0

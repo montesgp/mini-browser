@@ -12,12 +12,13 @@ Last round of owner feedback before v0.3.0: Chrome-like tab handling with the mo
 
 ## Tasks
 
-- [ ] T1 — S2, S3: settings box `×`, close on outside click, bottom-right placement — worker — commit: —
-- [ ] T2 — S1, S4, S5: middle-click close, new tabs at the end, drag to reorder (tests for core logic, Windows functional checks) — worker — commit: —
-- [ ] T3 — S1–S5: independent verify on Windows — verify — evidence: —
-- [ ] T4 — PR(s), ci-gate, merge — inline — merge: —
+- [x] T1 — S2, S3: settings box `×`, close on outside click, bottom-right placement — worker — commit: a2ff95d (PR #25)
+- [x] T2 — S1, S4, S5: middle-click close, new tabs at the end, drag to reorder (tests for core logic, Windows functional checks) — worker — commit: 1b4d656 (PR #26)
+- [x] T3 — S1–S5: independent verify on Windows — owner — evidence: L3
+- [x] T4 — PR(s), ci-gate, merge — inline — merge: #25 3acb368, #26 cdba74b
 
 ## Log
 
 - L1 (user, original request): "Excelente! Agregaria por ultimo algo mas y es como pasa en los demas navegadores o al menos en chrome que la rueda central del mouse puede cerrar pestaas tambien. Y ademas me gustaria que el stetings tenga una posibilidad de close con mouse. La que mas pro te parezca, o clickear fuera del container o que tenga un boton o cruz de close. Sino lo unico que la cierra es nuevamente el comando y queda bloqueando el buscador o alguna parte de alguna pagina. Ademas, tratemos de establecer el panel mucho mas abajo para evitar superponer la barra de busqueda cuando la ventana esta minimizada. Te paso imagenes de ejemplos con google servido y con la pestania nueva nuestra: [...] esas son con ventana minimizada. En max: [...] quiza podamos establecerlo mucho mas abajo para que en ninguno de los dos casos superponga. No se que te parece que puede ser la mejor opcion. Otro "problema" que detecte es que cuando hago "+" para nueva pestania, no se agrega al final sino posterior a la ventana activa. Hagamos que se agregue al final, pero que el usuario pueda arrastrar pestanias en la top bar tal como sucede con google chrome."
 - L2 (decisions, parent, as the owner asked for "la que más pro te parezca" / "qué te parece"): settings box closes with both a `×` and an outside click; anchored bottom-right (a fixed lower offset would still cover search fields on some sites); "minimizada" in the request means restored (not maximized). Middle click and drag use a Windows mouse hook scoped to the app's UI thread because CEF Views exposes neither; macOS/Linux are left for later and documented.
+- L3 (user): "Excelente! Funciono todo! Solo agregaria algo mas que tiene chrome que me gusta ctrl + numero te posiciona en la tab correspondiente es decir ctrl + 1 en la primera ctrl + 2 en la segunda y asi sucesivamente. Eso seria creo que el ultimo cambio previo al versionado y al release". Automated runtime checks of T1/T2 were blocked (the owner was using the PC); the owner tested S1–S5 by hand and confirmed. Ctrl/Cmd+1–8 / 9 shipped in PR #27 (c931e63), verified on Windows with three colored pages.
