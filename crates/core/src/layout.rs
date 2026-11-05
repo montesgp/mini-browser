@@ -54,16 +54,6 @@ pub fn frame_padding(padding: u32, maximized: bool, overhang: i32) -> u32 {
     }
 }
 
-/// Where a window's views start on the screen. A restored window's views start at its bounds;
-/// a maximized frameless window on Windows is larger than its screen, so its views are measured
-/// from a child view (`child`, when it could be converted to screen coordinates).
-pub fn view_origin(maximized: bool, bounds: (i32, i32), child: Option<(i32, i32)>) -> (i32, i32) {
-    match child {
-        Some(child) if maximized => child,
-        _ => bounds,
-    }
-}
-
 /// Bounds of a floating box `box_height` pixels tall: centered horizontally a fifth of the way
 /// down a window of `window_width` × `window_height`, at most `max_width` wide and keeping
 /// `side_margin` free on each side. It stays at least one pixel wide however narrow the window.
@@ -114,19 +104,6 @@ pub fn loading_segment(width: i32, elapsed_ms: u64, period_ms: u64) -> (i32, i32
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_restored_window_starts_at_its_bounds() {
-        assert_eq!(view_origin(false, (0, 536), Some((-8, 0))), (0, 536));
-        assert_eq!(view_origin(false, (120, 40), None), (120, 40));
-        assert_eq!(view_origin(false, (0, 500), Some((-8, 0))), (0, 500));
-    }
-
-    #[test]
-    fn a_maximized_window_starts_at_its_child_view() {
-        assert_eq!(view_origin(true, (-8, -8), Some((0, 0))), (0, 0));
-        assert_eq!(view_origin(true, (-8, -8), None), (-8, -8));
-    }
 
     fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
         Rect {
