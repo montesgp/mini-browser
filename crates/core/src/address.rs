@@ -74,7 +74,14 @@ pub fn is_remote_file_url(url: &str) -> bool {
     let Some(rest) = strip_prefix_ignore_case(url, "file:") else {
         return false;
     };
-    let rest = rest.replace('\\', "/");
+    // Encoded slashes and backslashes (`%2F`, `%5C`) count too: a page can write
+    // `file:///%5C%5Cserver/share`, which some layers decode into a UNC path.
+    let rest = rest
+        .replace("%5C", "/")
+        .replace("%5c", "/")
+        .replace("%2F", "/")
+        .replace("%2f", "/")
+        .replace('\\', "/");
     let Some(authority) = rest.strip_prefix("//") else {
         return false;
     };
@@ -262,6 +269,36 @@ fn is_domain(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encoded_unc_file_urls_are_remote() {
+        for url in [
+            "file:///%5C%5Cserver/x",
+            "file:///%2F%2Fserver/x",
+            "file:///%5c%5cserver",
+            "file://%2F%2Fserver/x",
+        ] {
+            assert!(is_remote_file_url(url), "{url}");
+        }
+        assert!(!is_remote_file_url("file:///C:/Users/me/page%20one.html"));
+        assert!(!is_remote_file_url("file:///C:/a%2Fb.html"));
+    }
+
+    #[test]
+    fn more_files_on_other_machines_become_a_search() {
+        for input in [
+            r"\.\UNC\server\share",
+            r"\?\C:\x",
+            r"\/server",
+            "file://[::1]/C:/x",
+            "file://localhost./C:/x",
+            "file://localhost//server/share",
+            "C:\u{FF3C}x",
+            "file:\u{FF0F}\u{FF0F}server/x",
+        ] {
+            assert_search(input, &windows());
+        }
+    }
 
     fn windows() -> LocalFiles {
         LocalFiles {
