@@ -4,6 +4,10 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Open files from your computer: type a path (`C:\Users\you\page.html`, `C:/…`, `/home/you/page.html` or `~/page.html`) or a `file:///` address in the home page's field or the `Ctrl/Cmd+L` box, pass it with `--url`, or drop a file on the window to open it in the current tab. Names with spaces, `#` or accents work. Files on other computers (`\\server\share\…`, `file://host/…`) are never opened and become a search, and websites still cannot open your files.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

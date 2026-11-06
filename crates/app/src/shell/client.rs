@@ -7,7 +7,7 @@ use std::{
 };
 
 use cef::*;
-use mini_core::{home, popups::PopupThrottle};
+use mini_core::{address, home, popups::PopupThrottle};
 
 use super::{commands, tabs, window};
 
@@ -67,10 +67,46 @@ wrap_request_handler! {
             // Only the app opens `mini:` pages. Web pages cannot link to or frame them (the
             // scheme is display-isolated), but a server's redirect is not checked against the
             // page that started the navigation, so cancel any redirect into the scheme.
-            let into_app_scheme = request.is_some_and(|request| {
-                home::is_app_url(&CefString::from(&request.url()).to_string())
-            });
-            (is_redirect == 1 && into_app_scheme).into()
+            // Chromium keeps web pages from opening `file:` pages and refuses redirects into
+            // them; cancel such redirects here too, and never open a file on another machine.
+            let Some(request) = request else {
+                return 0;
+            };
+            let url = CefString::from(&request.url()).to_string();
+            let into_local_scheme = home::is_app_url(&url) || address::is_file_url(&url);
+            ((is_redirect == 1 && into_local_scheme) || address::is_remote_file_url(&url)).into()
+        }
+
+        fn resource_request_handler(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            request: Option<&mut Request>,
+            _is_navigation: i32,
+            _is_download: i32,
+            _request_initiator: Option<&CefString>,
+            _disable_default_handling: Option<&mut i32>,
+        ) -> Option<ResourceRequestHandler> {
+            // A local page may ask for `file://server/…` images, scripts or frames; on Windows
+            // that opens the share and can send the user's credentials to the server.
+            let url = CefString::from(&request?.url()).to_string();
+            address::is_remote_file_url(&url).then(CancelRequest::new)
+        }
+    }
+}
+
+wrap_resource_request_handler! {
+    struct CancelRequest;
+
+    impl ResourceRequestHandler {
+        fn on_before_resource_load(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _request: Option<&mut Request>,
+            _callback: Option<&mut Callback>,
+        ) -> ReturnValue {
+            ReturnValue::CANCEL
         }
     }
 }

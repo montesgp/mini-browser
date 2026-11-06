@@ -2,7 +2,7 @@
 
 use cef::*;
 use mini_core::{
-    address::resolve_input,
+    address::{LocalFiles, PathStyle, resolve_input},
     launch::{self, Relaunch},
     settings::{SETTINGS_FILE, Settings},
 };
@@ -20,6 +20,20 @@ pub fn url_input(command_line: &CommandLine) -> String {
     command_line.arguments(Some(&mut arguments));
     let arguments: Vec<String> = arguments.into_iter().collect();
     launch::url_input(switch.as_deref(), &arguments)
+}
+
+/// What typed local paths resolve against: this platform's path style and, on macOS and Linux,
+/// the user's home directory (`$HOME`) for `~/…`.
+pub fn local_files() -> LocalFiles {
+    let home = if cfg!(windows) {
+        None
+    } else {
+        std::env::var("HOME").ok().filter(|home| !home.is_empty())
+    };
+    LocalFiles {
+        style: PathStyle::CURRENT,
+        home,
+    }
 }
 
 // `data_dir` is the app data directory holding the profile and the settings file;
@@ -101,9 +115,10 @@ wrap_browser_process_handler! {
             home::register_handler();
             let settings_path = self.data_dir.join(SETTINGS_FILE);
             let settings = Settings::load(&settings_path);
-            // `--url=` is resolved like address-box input, so it only ever loads a web address
-            // or a search. `None` (no switch or an empty one) starts with the home page.
-            let url = resolve_input(&self.url_input, &settings.search_template);
+            // `--url=` is resolved like address-box input, so it only ever loads a web address,
+            // a local file or a search. `None` (no switch or an empty one) starts with the home
+            // page.
+            let url = resolve_input(&self.url_input, &settings.search_template, &local_files());
             window::open(MiniClient::new(), settings, settings_path, url);
         }
 
@@ -119,7 +134,8 @@ wrap_browser_process_handler! {
             // with tabs and toolbar.
             let url_input = command_line.map(|line| url_input(line)).unwrap_or_default();
             let settings = Settings::load(&self.data_dir.join(SETTINGS_FILE));
-            if let Relaunch::OpenTab(url) = launch::relaunch(&url_input, &settings.search_template) {
+            let relaunch = launch::relaunch(&url_input, &settings.search_template, &local_files());
+            if let Relaunch::OpenTab(url) = relaunch {
                 tabs::open_tab(Some(&url));
             }
             window::bring_to_front();
