@@ -144,7 +144,7 @@ fn submit() {
     }) else {
         return;
     };
-    let Some(url) = resolve_input(&text, &search_template) else {
+    let Some(url) = resolve_input(&text, &search_template, &super::app::local_files()) else {
         return;
     };
     hide();

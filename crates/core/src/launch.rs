@@ -1,7 +1,7 @@
 //! What a launch asks for: the `--url` input of its command line and, for a second launch while
 //! the app is running, what the running window does with it.
 
-use crate::address::resolve_input;
+use crate::address::{LocalFiles, resolve_input};
 
 /// What the running window does when the app is launched again.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,10 +25,10 @@ pub fn url_input(switch: Option<&str>, arguments: &[String]) -> String {
 }
 
 /// What a second launch with `url_input` does, resolved with the same rules as the first launch
-/// and the address box: only web addresses load, anything else becomes a search, and empty input
-/// only brings the window to the front.
-pub fn relaunch(url_input: &str, search_template: &str) -> Relaunch {
-    match resolve_input(url_input, search_template) {
+/// and the address box: only web addresses and local files load, anything else becomes a search,
+/// and empty input only brings the window to the front.
+pub fn relaunch(url_input: &str, search_template: &str, files: &LocalFiles) -> Relaunch {
+    match resolve_input(url_input, search_template, files) {
         Some(url) => Relaunch::OpenTab(url),
         None => Relaunch::Focus,
     }
@@ -37,7 +37,14 @@ pub fn relaunch(url_input: &str, search_template: &str) -> Relaunch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address::DEFAULT_SEARCH_TEMPLATE;
+    use crate::address::{DEFAULT_SEARCH_TEMPLATE, PathStyle};
+
+    fn windows() -> LocalFiles {
+        LocalFiles {
+            style: PathStyle::Windows,
+            home: None,
+        }
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|arg| (*arg).to_owned()).collect()
@@ -80,18 +87,24 @@ mod tests {
 
     #[test]
     fn relaunch_without_input_only_focuses() {
-        assert_eq!(relaunch("", DEFAULT_SEARCH_TEMPLATE), Relaunch::Focus);
-        assert_eq!(relaunch("   ", DEFAULT_SEARCH_TEMPLATE), Relaunch::Focus);
+        assert_eq!(
+            relaunch("", DEFAULT_SEARCH_TEMPLATE, &windows()),
+            Relaunch::Focus
+        );
+        assert_eq!(
+            relaunch("   ", DEFAULT_SEARCH_TEMPLATE, &windows()),
+            Relaunch::Focus
+        );
     }
 
     #[test]
     fn relaunch_with_a_web_address_opens_it_in_a_tab() {
         assert_eq!(
-            relaunch("https://example.org", DEFAULT_SEARCH_TEMPLATE),
+            relaunch("https://example.org", DEFAULT_SEARCH_TEMPLATE, &windows()),
             Relaunch::OpenTab("https://example.org".to_owned())
         );
         assert_eq!(
-            relaunch("example.org", DEFAULT_SEARCH_TEMPLATE),
+            relaunch("example.org", DEFAULT_SEARCH_TEMPLATE, &windows()),
             Relaunch::OpenTab("https://example.org".to_owned())
         );
     }
@@ -99,23 +112,39 @@ mod tests {
     #[test]
     fn relaunch_with_another_scheme_opens_a_search() {
         assert_eq!(
-            relaunch("javascript:alert(1)", DEFAULT_SEARCH_TEMPLATE),
+            relaunch("javascript:alert(1)", DEFAULT_SEARCH_TEMPLATE, &windows()),
             Relaunch::OpenTab(
                 "https://www.google.com/search?q=javascript%3Aalert%281%29".to_owned()
             )
         );
         assert_eq!(
-            relaunch("file:///etc/passwd", DEFAULT_SEARCH_TEMPLATE),
+            relaunch(
+                "file://server/share/x.html",
+                DEFAULT_SEARCH_TEMPLATE,
+                &windows()
+            ),
             Relaunch::OpenTab(
-                "https://www.google.com/search?q=file%3A%2F%2F%2Fetc%2Fpasswd".to_owned()
+                "https://www.google.com/search?q=file%3A%2F%2Fserver%2Fshare%2Fx.html".to_owned()
             )
+        );
+    }
+
+    #[test]
+    fn relaunch_with_a_local_file_opens_it_in_a_tab() {
+        assert_eq!(
+            relaunch(
+                r"C:\Users\ana\page one.html",
+                DEFAULT_SEARCH_TEMPLATE,
+                &windows()
+            ),
+            Relaunch::OpenTab("file:///C:/Users/ana/page%20one.html".to_owned())
         );
     }
 
     #[test]
     fn relaunch_uses_the_configured_search_template() {
         assert_eq!(
-            relaunch("rust cef", "https://duckduckgo.com/?q={query}"),
+            relaunch("rust cef", "https://duckduckgo.com/?q={query}", &windows()),
             Relaunch::OpenTab("https://duckduckgo.com/?q=rust+cef".to_owned())
         );
     }

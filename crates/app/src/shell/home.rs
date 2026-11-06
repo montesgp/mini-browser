@@ -15,7 +15,7 @@ use mini_core::{
     home::{self, Asset, HomeCommand, Route},
 };
 
-use super::{commands, settings_box, tabs};
+use super::{app, commands, settings_box, tabs};
 
 const INDEX_HTML: &str = include_str!("../../home/index.html");
 const HOME_CSS: &str = include_str!("../../home/home.css");
@@ -132,7 +132,7 @@ fn answer(request: &UiRequest) -> Reply {
     match &request.command {
         Some(HomeCommand::Go(input)) => {
             let template = settings_box::settings().unwrap_or_default().search_template;
-            if let Some(url) = resolve_input(input, &template) {
+            if let Some(url) = resolve_input(input, &template, &app::local_files()) {
                 tabs::navigate_active(&url);
             }
         }

@@ -63,6 +63,7 @@ Drag the dark frame to move the window, double-click it to maximize or restore, 
 - **`Auto` or `Pinned`.** By default (`Auto`) the bar only shows on hover, so a shared screen stays clean. `Pinned` keeps it always visible, with the page below it. Click the pin in the bar, choose in settings (`Ctrl+,`) or press `Ctrl+Shift+F`; the choice is remembered. On Linux the bar does not follow the mouse yet: in `Auto` it shows only when tabs change, so pin it to reach the buttons.
 - **The settings box stays out of the way.** It opens in the bottom-right corner of the page, so it does not cover search fields at the top or center of pages. Close it with its `×`, a click outside it (on the page, a tab, the frame or the bar), `Esc` or `Ctrl+,` again (`Cmd+,` on Mac).
 - **Starting it again brings the open window to the front** instead of opening a second one. Started with an address (`--url=github.com`), it also opens that address in a new tab.
+- **Open a file from your computer.** Type its path in the home page's field or the `Ctrl+L` box (`C:\Users\you\Downloads\page.html` on Windows, `/Users/you/page.html` or `~/page.html` on Mac and Linux), or a `file:///` address, start the app with `--url` and the path, or drop the file (a page, PDF or image) on the window to open it in the current tab. Files on other computers (`\\server\share\…`) are not opened; that text becomes a search. Websites cannot open your files.
 
 ## Good to know
 
@@ -147,7 +148,14 @@ Implemented in `crates/core/src/address.rs`:
 
 - `http://` and `https://` input loads as typed.
 - Host-like input gets `https://`: at least two dot-separated labels ending in an alphabetic or punycode TLD, no `@` in the authority (`github.com`, `vercel.com/home`, `medium.com/@user`). `localhost` and IP addresses get `http://`.
-- Everything else is a search through the configured template, including any other scheme (`javascript:`, `file:`, `data:`, `chrome:`, and the app's own `mini:`). Empty input does nothing.
+- Local files load as `file:///` URLs, with the platform passed in by the app (`LocalFiles`: `PathStyle::CURRENT` and, on macOS and Linux, `$HOME` for `~`):
+  - `file:` URLs whose host is empty or `localhost` (`file:///C:/x.html`, `file://localhost/etc/hosts`); backslashes count as slashes, and the path is decoded and percent-encoded again, so it is canonical (`file:///C:/My%20Files/x.html`).
+  - Windows: drive paths, `C:\x` or `C:/x`, any drive letter. macOS and Linux: absolute paths (`/x`, so a bare `/word` opens a file there and is a search on Windows) and `~` or `~/x` in the home directory.
+  - Paths are percent-encoded byte by byte (UTF-8) except letters, digits and `-._~!$&'()*+,;=:@/`, so spaces, `#`, `?`, `%` and non-ASCII names open (`café#1.html` → `caf%C3%A9%231.html`).
+  - Refused, so a search: UNC paths (`\\server\share`, `//server/share`), `file://host/…` with any other host (also `127.0.0.1` or with a port or user), paths that decode to another machine (`file:////server`, `file:///%5C%5Cserver`), relative paths (`Downloads\x.html`), drive-relative paths (`C:x`) and paths of the other platform.
+- Everything else is a search through the configured template, including any other scheme (`javascript:`, `data:`, `chrome:`, and the app's own `mini:`). Empty input does nothing.
+- **Dropped files** open through Chromium's default drop handling (the `DragHandler` lets drags through); the address box rules do not apply to them because the user picked the file.
+- **Navigation guard** (`MiniRequestHandler` in `crates/app/src/shell/client.rs`): `on_before_browse` cancels redirects into `file:` (Chromium already refuses them with `ERR_UNSAFE_REDIRECT`) and every navigation to a file on another machine (`mini_core::address::is_remote_file_url`); `get_resource_request_handler` cancels images, scripts and other requests for such files, which a local page could otherwise make. On Windows those would open the share and could send the user's credentials to its server.
 
 ## Home page
 
@@ -155,7 +163,7 @@ New tabs load `mini://home/`, so it is the first entry of their history and Back
 
 - **Files:** `crates/app/src/shell/home.rs` registers a scheme handler factory for `mini://home/` that serves the embedded files with `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` and `X-Frame-Options: DENY`. Nothing remote loads; fonts are the system's.
 - **Command bridge:** the page calls `fetch('/cmd/<name>')` on its own origin. `mini_core::home::route` maps the URL to a fixed list (`go?input=`, `new-tab`, `close-tab`, `next-tab`, `previous-tab`, `back`, `forward`, `reload`, `top-bar`, `padding?step=-1|1`, `quit`) plus `state`; anything else is `404`, and so is a document request (navigation or frame) to `state` or a command, which only `fetch` may call. A command runs only when the request is a `GET` `fetch` from a main frame showing the home document, `mini://home/` or `mini://home/index.html` (`mini_core::home::is_home_url`, checked on the IO thread) and its browser is the active tab, still on the home page (checked on the UI thread, where the command runs through `commands::run`, `settings_box::step` or `tabs::navigate_active`); otherwise the reply is `403` and nothing runs. Every answer is the state JSON `{"platform", "padding", "topBar"}`.
-- **Input:** `go` resolves its input with `resolve_input`, so `mini://home/cmd/quit` typed in the field is a search.
+- **Input:** `go` resolves its input with `resolve_input`, so `mini://home/cmd/quit` typed in the field is a search and a local path opens the file.
 - **Shell integration:** the tab strip shows `New tab` for the home page and no loading line; `Ctrl/Cmd+L` on the home page focuses its field (`Frame::execute_java_script` calls `window.miniFocusAddress`) instead of opening the address box.
 
 ## Settings file
@@ -202,7 +210,8 @@ The top bar (`crates/app/src/shell/top_bar.rs`) is a window overlay below the fr
 - **Sandbox on** on every platform. On Windows the bundle runs through CEF's `bootstrap.exe`, which hosts the app's DLL so renderer, GPU and utility processes start sandboxed.
 - **Isolated profile** in the app data directory.
 - **No debugging backdoors:** no remote debugging port, no flag that weakens web security, and Chromium/CEF switches given on the command line are ignored (`Settings.command_line_args_disabled`), so a launch with `--no-sandbox` or `--remote-debugging-port` has no effect, also when it is a second launch handed to the running app. The app reads its own `--url` before CEF initializes; its built-in switches are added in `on_before_command_line_processing`.
-- **Home page bridge:** the `mini://home/` page can ask the app to run only its listed commands, and only from the active tab's main frame while it shows the home page; web pages cannot link to, frame, `fetch` or redirect to it (see [Home page](#home-page)).
+- **Local files only from the user:** the address box, the home page's field, `--url` and a dropped file open local files; web pages cannot navigate, redirect or frame `file:` (Chromium's rule, which the app does not relax: no `allow_file_access_from_file_urls`). Files on other machines (UNC paths, `file://host/…`) are never opened, typed or requested by a page, because on Windows that can send the user's credentials to the host (see [Address resolution](#address-resolution)).
+- **Home page bridge:** the `mini://home/` page can ask the app to run only its listed commands, and only from the active tab's main frame while it shows the home page; web pages and local `file:` pages cannot link to, frame, `fetch` or redirect to it (see [Home page](#home-page)).
 - **Pop-up throttle:** pop-ups become tabs, at most 3 per window every 2 seconds, shared by all pages so a chain of pop-ups cannot reset it (`mini_core::popups::PopupThrottle` with one key); extra ones are cancelled and logged to stderr.
 - **No permission prompts:** tabs use CEF's Alloy runtime style (CEF allows one Chrome-style browser per window), which has no permission UI, and no permission handler is registered, so camera, microphone, location and similar requests are not granted.
 
