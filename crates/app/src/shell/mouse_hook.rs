@@ -29,11 +29,11 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             CallNextHookEx, GA_ROOT, GW_HWNDNEXT, GWL_EXSTYLE, GetAncestor, GetCursorPos,
             GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongW, GetWindowRect, HC_ACTION,
-            HHOOK, IsIconic, IsWindowVisible, MOUSEHOOKSTRUCT, SM_SWAPBUTTON, SetWindowsHookExW,
-            UnhookWindowsHookEx, WH_MOUSE, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-            WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDBLCLK,
-            WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMBUTTONDBLCLK, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP,
-            WM_NCMOUSEMOVE, WS_EX_TRANSPARENT,
+            HHOOK, IsIconic, IsWindowVisible, MOUSEHOOKSTRUCT, SM_SWAPBUTTON, SW_RESTORE,
+            SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_MOUSE, WM_LBUTTONDBLCLK,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP,
+            WM_MOUSEMOVE, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMBUTTONDBLCLK,
+            WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCMOUSEMOVE, WS_EX_TRANSPARENT,
         },
     },
 };
@@ -401,7 +401,7 @@ fn move_window(win: WindowId, point: (i32, i32), grab: i32) {
         return;
     };
     let offset = if window.is_maximized() == 1 {
-        window.restore();
+        restore(win);
         only_tab_grab(grab)
     } else {
         // `point` starts where the window's views start; its position is its bounds' corner.
@@ -410,6 +410,16 @@ fn move_window(win: WindowId, point: (i32, i32), grab: i32) {
         (point.0 + origin.x - bounds.x, point.1 + origin.y - bounds.y)
     };
     follow(WindowDrag { win, offset, grab });
+}
+
+/// Restores maximized window `win`. CEF's `Window::restore` leaves a frameless maximized window
+/// maximized while a mouse button is down, so the window is restored directly.
+fn restore(win: WindowId) {
+    let handle = handle_of(win);
+    if !handle.is_null() {
+        // SAFETY: ShowWindow takes any window handle; `handle` is one of the app's windows.
+        unsafe { ShowWindow(handle, SW_RESTORE) };
+    }
 }
 
 /// Starts `drag`: its window follows the pointer until the button is up.
@@ -447,9 +457,14 @@ fn follow_pointer() {
         x: screen.x - drag.offset.0,
         y: screen.y - drag.offset.1,
     };
-    let bounds = window.bounds_in_screen();
-    if (bounds.x, bounds.y) != (position.x, position.y) {
-        window.set_position(Some(&position));
+    if window.is_maximized() == 1 {
+        // Moving a maximized window only moves its saved restored bounds.
+        restore(drag.win);
+    } else {
+        let bounds = window.bounds_in_screen();
+        if (bounds.x, bounds.y) != (position.x, position.y) {
+            window.set_position(Some(&position));
+        }
     }
     let mut task = FollowPointer::new();
     post_delayed_task(ThreadId::UI, Some(&mut task), FOLLOW_MS);

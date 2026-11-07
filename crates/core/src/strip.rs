@@ -154,6 +154,13 @@ mod tests {
 
     const INDICATOR: i32 = 36;
 
+    #[test]
+    fn a_drop_outside_the_tabs_lands_at_an_end() {
+        let strip = layout(1000, 3, 0);
+        assert_eq!(drop_index(-500, 0, &strip, GAP), strip.first);
+        assert_eq!(drop_index(5000, 0, &strip, GAP), strip.first + strip.count);
+    }
+
     fn layout(available: i32, tabs: usize, active: usize) -> StripLayout {
         strip_layout(available, tabs, active, MIN, MAX, GAP, 0, 0)
     }
