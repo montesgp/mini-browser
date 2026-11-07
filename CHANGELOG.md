@@ -12,6 +12,10 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 - On Windows, drag a tab up or down out of the top bar to open it in its own window, which follows the mouse until you let go, and drag a tab onto another window's top bar to move it there at that spot, as in Chrome; the page keeps running without reloading. Dragging a window's only tab moves the window, a window left without tabs closes, and a tab dropped anywhere else stays in its window. macOS and Linux use `Cmd/Ctrl+Shift+N` and `Cmd/Ctrl+Shift+M` instead.
 - With several windows, closing a window (its close button or `Alt+F4`) closes only its tabs, `Ctrl+W` on the last tab of an extra window closes that window, and `Ctrl/Cmd+Q` or the home page's quit row closes every window. Settings changes apply to every window, pop-ups open in their page's window and starting the app again brings the window you used last to the front.
 
+### Fixed
+
+- The settings box's `×` close button is visible again; it was drawn too small to show its glyph.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

@@ -33,8 +33,10 @@ const FONT: &str = "Segoe UI, Helvetica, Arial, 14px";
 const TITLE_FONT: &str = "Segoe UI, Helvetica, Arial, Bold 15px";
 /// The `−` and `+` glyphs; at this size their strokes look equally heavy.
 const STEP_FONT: &str = "Segoe UI, Helvetica, Arial, 20px";
+/// The `×` uses the `−`/`+` buttons' size: a smaller label button has no room left for its
+/// text inside the button's insets, and Views draws nothing.
 const CLOSE_FONT: &str = "Segoe UI, Helvetica, Arial, 18px";
-const CLOSE_SIZE: i32 = 24;
+const CLOSE_SIZE: i32 = BUTTON_SIZE;
 const VALUE_WIDTH: i32 = 56;
 const BUTTON_SIZE: i32 = 28;
 const MODE_WIDTH: i32 = 64;
