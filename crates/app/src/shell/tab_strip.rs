@@ -8,8 +8,6 @@
 //! Windows `mouse_hook` closes a tab on a middle click and reorders tabs dragged along the strip,
 //! hit-testing the labels with [`tab_at`].
 
-use std::cell::{Cell, RefCell};
-
 use cef::*;
 #[cfg(target_os = "windows")]
 use mini_core::strip;
@@ -21,6 +19,7 @@ use mini_core::{
 use super::{
     tabs, top_bar,
     window::{self, DarkPanelDelegate},
+    windows::{self, WindowId},
 };
 
 pub const STRIP_HEIGHT: i32 = 28;
@@ -57,16 +56,30 @@ struct TabViews {
     close: LabelButton,
 }
 
-thread_local! {
-    static STRIP: RefCell<Option<Panel>> = const { RefCell::new(None) };
+/// A window's strip.
+#[derive(Default)]
+pub struct Strip {
+    panel: Option<Panel>,
     /// The views of each shown tab, in strip order.
-    static BUTTONS: RefCell<Vec<TabViews>> = const { RefCell::new(Vec::new()) };
+    buttons: Vec<TabViews>,
     /// The layout the labels were built for, and for how many tabs.
-    static SHOWN: Cell<Option<(StripLayout, usize)>> = const { Cell::new(None) };
+    shown: Option<(StripLayout, usize)>,
 }
 
-/// Creates the strip panel.
-pub fn create() -> Option<Panel> {
+/// Runs `f` on the strip of window `win`; `None` once the window is gone.
+fn with_strip<R>(win: WindowId, f: impl FnOnce(&mut Strip) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let mut strip = state.strip.borrow_mut();
+    Some(f(&mut strip))
+}
+
+/// The layout the labels of window `win` were built for, and for how many tabs.
+fn shown(win: WindowId) -> Option<(StripLayout, usize)> {
+    with_strip(win, |strip| strip.shown).flatten()
+}
+
+/// Creates the strip panel of window `win`.
+pub fn create(win: WindowId) -> Option<Panel> {
     let panel = panel_create(Some(&mut DarkPanelDelegate::new(STRIP_COLOR, STRIP_HEIGHT)))?;
     panel.set_to_box_layout(Some(&BoxLayoutSettings {
         horizontal: 1,
@@ -74,23 +87,17 @@ pub fn create() -> Option<Panel> {
         cross_axis_alignment: AxisAlignment::STRETCH,
         ..Default::default()
     }));
-    STRIP.set(Some(panel.clone()));
+    with_strip(win, |strip| strip.panel = Some(panel.clone()))?;
     Some(panel)
 }
 
-pub fn destroy() {
-    STRIP.take();
-    BUTTONS.take();
-    SHOWN.take();
-}
-
-pub fn panel() -> Option<Panel> {
-    STRIP.with_borrow(Clone::clone)
+pub fn panel(win: WindowId) -> Option<Panel> {
+    with_strip(win, |strip| strip.panel.clone()).flatten()
 }
 
 /// Where the labels, the new-tab button and the hidden-tab count end, in strip coordinates.
-pub fn labels_end() -> i32 {
-    let Some(panel) = panel() else {
+pub fn labels_end(win: WindowId) -> i32 {
+    let Some(panel) = panel(win) else {
         return 0;
     };
     let count = i32::try_from(panel.child_view_count()).unwrap_or(0);
@@ -102,19 +109,24 @@ pub fn labels_end() -> i32 {
 
 /// The shown tab whose label lies under `x` (strip coordinates), and where its label starts.
 #[cfg(target_os = "windows")]
-pub fn tab_at(x: i32) -> Option<(TabId, i32)> {
-    let (layout, _) = SHOWN.get()?;
+pub fn tab_at(win: WindowId, x: i32) -> Option<(TabId, i32)> {
+    let (layout, _) = shown(win)?;
     let index = strip::tab_at(x, &layout, TAB_SPACING)?;
-    let id =
-        BUTTONS.with_borrow(|buttons| buttons.get(index - layout.first).map(|views| views.id))?;
+    let id = with_strip(win, |strip| {
+        strip
+            .buttons
+            .get(index - layout.first)
+            .map(|views| views.id)
+    })
+    .flatten()?;
     Some((id, strip::tab_left(index, &layout, TAB_SPACING)?))
 }
 
 /// The position among the tabs of a tab dragged with the pointer at `x` (strip coordinates),
 /// held `grab` pixels from its label's left edge.
 #[cfg(target_os = "windows")]
-pub fn drag_index(x: i32, grab: i32) -> Option<usize> {
-    let (layout, _) = SHOWN.get()?;
+pub fn drag_index(win: WindowId, x: i32, grab: i32) -> Option<usize> {
+    let (layout, _) = shown(win)?;
     strip::drag_index(x, grab, &layout, TAB_SPACING)
 }
 
@@ -135,62 +147,67 @@ fn layout_for(panel: &Panel, entries: &[tabs::StripEntry]) -> StripLayout {
 
 /// Rebuilds the labels when the strip's width no longer suits them. Call it whenever the
 /// window is laid out.
-pub fn fit() {
-    let Some(panel) = panel() else {
+pub fn fit(win: WindowId) {
+    let Some(panel) = panel(win) else {
         return;
     };
-    let entries = tabs::strip_entries();
-    if SHOWN.get() != Some((layout_for(&panel, &entries), entries.len())) {
-        refresh();
+    let entries = tabs::strip_entries(win);
+    if shown(win) != Some((layout_for(&panel, &entries), entries.len())) {
+        refresh(win);
     }
 }
 
-/// Rebuilds the strip from the tab model.
-pub fn refresh() {
-    let Some(panel) = panel() else {
+/// Rebuilds the strip of window `win` from its tab model.
+pub fn refresh(win: WindowId) {
+    let Some(panel) = panel(win) else {
         return;
     };
     panel.remove_all_child_views();
-    let entries = tabs::strip_entries();
+    let entries = tabs::strip_entries(win);
     let layout = layout_for(&panel, &entries);
-    SHOWN.set(Some((layout, entries.len())));
+    with_strip(win, |strip| strip.shown = Some((layout, entries.len())));
     let mut buttons = Vec::new();
     for entry in entries.iter().skip(layout.first).take(layout.count) {
-        let Some(tab) = tab_views(entry, layout.tab_width) else {
+        let Some(tab) = tab_views(win, entry, layout.tab_width) else {
             continue;
         };
         panel.add_child_view(Some(&mut View::from(&tab.panel)));
         buttons.push(tab);
     }
-    add_new_tab_button(&panel);
+    add_new_tab_button(win, &panel);
     if layout.hidden > 0 {
         add_hidden_count(&panel, layout.hidden);
     }
-    BUTTONS.set(buttons);
+    // The previous views are released after the borrow ends: releasing them calls into CEF.
+    let previous = with_strip(win, |strip| std::mem::replace(&mut strip.buttons, buttons));
+    drop(previous);
     panel.layout();
-    window::update_drag_regions();
+    window::update_drag_regions(win);
 }
 
 /// Shows a new title on the label of `tab`, without rebuilding the strip.
-pub fn retitle(tab: TabId, title: &str) {
-    let Some(panel) = panel() else {
+pub fn retitle(win: WindowId, tab: TabId, title: &str) {
+    let Some(panel) = panel(win) else {
         return;
     };
-    let Some(button) = BUTTONS.with_borrow(|buttons| {
-        buttons
-            .iter()
-            .find(|views| views.id == tab)
-            .map(|views| views.title.clone())
-    }) else {
+    let Some(button) = views_of(win, tab).map(|views| views.title) else {
         return;
     };
     set_title(&button, title);
     panel.layout();
-    window::update_drag_regions();
+    window::update_drag_regions(win);
+}
+
+/// The views of `tab` while the strip of window `win` shows it.
+fn views_of(win: WindowId, tab: TabId) -> Option<TabViews> {
+    with_strip(win, |strip| {
+        strip.buttons.iter().find(|views| views.id == tab).cloned()
+    })
+    .flatten()
 }
 
 /// The panel of a tab `width` pixels wide, with its title and close button.
-fn tab_views(entry: &tabs::StripEntry, width: i32) -> Option<TabViews> {
+fn tab_views(win: WindowId, entry: &tabs::StripEntry, width: i32) -> Option<TabViews> {
     let (background, text_color) = colors(entry.active);
     let panel = panel_create(Some(&mut DarkPanelDelegate::new(background, 0)))?;
     panel.set_to_box_layout(Some(&BoxLayoutSettings {
@@ -199,12 +216,12 @@ fn tab_views(entry: &tabs::StripEntry, width: i32) -> Option<TabViews> {
         ..Default::default()
     }));
     panel.set_background_color(background);
-    let mut delegate = TabButtonDelegate::new(entry.id, entry.active);
+    let mut delegate = TabButtonDelegate::new(win, entry.id, entry.active);
     let text = CefString::from(entry.title.as_str());
     let title = label_button_create(Some(&mut delegate), Some(&text))?;
     style_button(&title, FONT, background, text_color);
     set_title(&title, &entry.title);
-    let mut delegate = CloseButtonDelegate::new(entry.id, entry.active);
+    let mut delegate = CloseButtonDelegate::new(win, entry.id, entry.active);
     let close = label_button_create(Some(&mut delegate), Some(&CefString::from(CLOSE_GLYPH)))?;
     style_button(&close, CLOSE_FONT, background, text_color);
     let size = Size {
@@ -253,10 +270,8 @@ fn show_close(tab: &TabViews, shown: bool) {
 }
 
 /// Shows the close button of `tab` while it is active or the pointer is on its title or button.
-fn update_close(tab: TabId) {
-    let Some(views) =
-        BUTTONS.with_borrow(|buttons| buttons.iter().find(|views| views.id == tab).cloned())
-    else {
+fn update_close(win: WindowId, tab: TabId) {
+    let Some(views) = views_of(win, tab) else {
         return;
     };
     let shown = views.active || lit(&views.title) || lit(&views.close);
@@ -275,15 +290,15 @@ fn lit_state(state: ButtonState) -> bool {
 
 /// Checks the close button of `tab` after the current event: moving from the title to its close
 /// button leaves the title before it enters the button.
-fn update_close_later(tab: TabId) {
-    let mut task = UpdateClose::new(tab);
+fn update_close_later(win: WindowId, tab: TabId) {
+    let mut task = UpdateClose::new(win, tab);
     post_task(ThreadId::UI, Some(&mut task));
 }
 
 /// Adds the `+` button that opens a new tab at the end, like `Ctrl/Cmd+T`.
-fn add_new_tab_button(panel: &Panel) {
+fn add_new_tab_button(win: WindowId, panel: &Panel) {
     let Some(button) = label_button_create(
-        Some(&mut NewTabDelegate::new()),
+        Some(&mut NewTabDelegate::new(win)),
         Some(&CefString::from(NEW_TAB_GLYPH)),
     ) else {
         return;
@@ -343,6 +358,7 @@ fn colors(active: bool) -> (u32, u32) {
 
 wrap_button_delegate! {
     struct TabButtonDelegate {
+        win: WindowId,
         tab: TabId,
         active: bool,
     }
@@ -359,18 +375,19 @@ wrap_button_delegate! {
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
             // Activating rebuilds the strip, which destroys this button: do it after the press.
-            let mut task = ActivateTab::new(self.tab);
+            let mut task = ActivateTab::new(self.win, self.tab);
             post_task(ThreadId::UI, Some(&mut task));
         }
 
         fn on_button_state_changed(&self, _button: Option<&mut Button>) {
-            update_close_later(self.tab);
+            update_close_later(self.win, self.tab);
         }
     }
 }
 
 wrap_button_delegate! {
     struct CloseButtonDelegate {
+        win: WindowId,
         tab: TabId,
         active: bool,
     }
@@ -387,7 +404,7 @@ wrap_button_delegate! {
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
             // Closing rebuilds the strip, which destroys this button: do it after the press.
-            let mut task = CloseTab::new(self.tab);
+            let mut task = CloseTab::new(self.win, self.tab);
             post_task(ThreadId::UI, Some(&mut task));
         }
 
@@ -400,13 +417,15 @@ wrap_button_delegate! {
                 };
                 button.set_background_color(color);
             }
-            update_close_later(self.tab);
+            update_close_later(self.win, self.tab);
         }
     }
 }
 
 wrap_button_delegate! {
-    struct NewTabDelegate {}
+    struct NewTabDelegate {
+        win: WindowId,
+    }
 
     impl ViewDelegate {
         fn on_theme_changed(&self, view: Option<&mut View>) {
@@ -420,7 +439,7 @@ wrap_button_delegate! {
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
             // Opening a tab rebuilds the strip, which destroys this button: do it after the press.
-            let mut task = OpenTab::new();
+            let mut task = OpenTab::new(self.win);
             post_task(ThreadId::UI, Some(&mut task));
         }
 
@@ -434,11 +453,13 @@ wrap_button_delegate! {
 }
 
 wrap_task! {
-    struct OpenTab;
+    struct OpenTab {
+        win: WindowId,
+    }
 
     impl Task {
         fn execute(&self) {
-            tabs::new_tab();
+            tabs::new_tab(self.win);
         }
     }
 }
@@ -455,37 +476,40 @@ wrap_button_delegate! {
 
 wrap_task! {
     struct ActivateTab {
+        win: WindowId,
         tab: TabId,
     }
 
     impl Task {
         fn execute(&self) {
-            tabs::activate(self.tab);
-            top_bar::tab_chosen();
+            tabs::activate(self.win, self.tab);
+            top_bar::tab_chosen(self.win);
         }
     }
 }
 
 wrap_task! {
     struct CloseTab {
+        win: WindowId,
         tab: TabId,
     }
 
     impl Task {
         fn execute(&self) {
-            tabs::close(self.tab);
+            tabs::close(self.win, self.tab);
         }
     }
 }
 
 wrap_task! {
     struct UpdateClose {
+        win: WindowId,
         tab: TabId,
     }
 
     impl Task {
         fn execute(&self) {
-            update_close(self.tab);
+            update_close(self.win, self.tab);
         }
     }
 }

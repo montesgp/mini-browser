@@ -9,7 +9,7 @@ use mini_core::{
 
 use std::path::PathBuf;
 
-use super::{client::MiniClient, home, tabs, window};
+use super::{client::MiniClient, home, settings_box, tabs, window, windows};
 
 /// The `--url` input of `command_line` (`--url=<input>` or `--url <input>`), empty without one.
 pub fn url_input(command_line: &CommandLine) -> String {
@@ -119,7 +119,8 @@ wrap_browser_process_handler! {
             // a local file or a search. `None` (no switch or an empty one) starts with the home
             // page.
             let url = resolve_input(&self.url_input, &settings.search_template, &local_files());
-            window::open(MiniClient::new(), settings, settings_path, url);
+            settings_box::init(settings, settings_path);
+            window::open(MiniClient::new(), url);
         }
 
         fn on_already_running_app_relaunch(
@@ -130,15 +131,17 @@ wrap_browser_process_handler! {
             // The app was launched again while it runs. `command_line` is the new launch's,
             // already cleared of user switches, plus its `--url` input (see
             // `on_before_command_line_processing`); only that input is used, with the first
-            // launch's rules. Always handled, so Chromium never opens its default browser window
-            // with tabs and toolbar.
+            // launch's rules, in the last active window. Always handled, so Chromium never opens
+            // its default browser window with tabs and toolbar.
             let url_input = command_line.map(|line| url_input(line)).unwrap_or_default();
             let settings = Settings::load(&self.data_dir.join(SETTINGS_FILE));
             let relaunch = launch::relaunch(&url_input, &settings.search_template, &local_files());
-            if let Relaunch::OpenTab(url) = relaunch {
-                tabs::open_tab(Some(&url));
+            if let Some(win) = windows::last_active() {
+                if let Relaunch::OpenTab(url) = relaunch {
+                    tabs::open_tab(win, Some(&url));
+                }
+                window::bring_to_front(win);
             }
-            window::bring_to_front();
             1
         }
 

@@ -2,14 +2,13 @@
 //! shown as a window overlay over the page. The overlay around the field is transparent, so the
 //! field's own outline is the box's edge on light and dark pages alike.
 
-use std::cell::RefCell;
-
 use cef::*;
 use mini_core::{address::resolve_input, layout};
 
 use super::{
     commands, settings_box, tabs,
     window::{self, DarkPanelDelegate},
+    windows::{self, WindowId},
 };
 
 pub const PLACEHOLDER: &str = "Enter URL or search…";
@@ -32,7 +31,7 @@ const FONT: &str = "Segoe UI, Helvetica, Arial, 16px";
 const VK_RETURN: i32 = 0x0D;
 const VK_ESCAPE: i32 = 0x1B;
 
-struct AddressBox {
+pub struct AddressBox {
     window: Window,
     controller: OverlayController,
     panel: Panel,
@@ -40,28 +39,29 @@ struct AddressBox {
     search_template: String,
 }
 
-thread_local! {
-    static ADDRESS_BOX: RefCell<Option<AddressBox>> = const { RefCell::new(None) };
+/// Reads the box of window `win` with `f`; `None` before it is created or once it is gone.
+fn with_box<R>(win: WindowId, f: impl FnOnce(&AddressBox) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let address_box = state.address_box.borrow();
+    address_box.as_ref().map(f)
 }
 
 /// Clones the box handles, so CEF calls happen outside the borrow.
-fn handles() -> Option<(Window, OverlayController, Panel, Textfield)> {
-    ADDRESS_BOX.with_borrow(|address_box| {
-        address_box.as_ref().map(|address_box| {
-            (
-                address_box.window.clone(),
-                address_box.controller.clone(),
-                address_box.panel.clone(),
-                address_box.textfield.clone(),
-            )
-        })
+fn handles(win: WindowId) -> Option<(Window, OverlayController, Panel, Textfield)> {
+    with_box(win, |address_box| {
+        (
+            address_box.window.clone(),
+            address_box.controller.clone(),
+            address_box.panel.clone(),
+            address_box.textfield.clone(),
+        )
     })
 }
 
-/// Creates the (hidden) box as an overlay of `window`. Call it after the window's other views
-/// are added so the box stays on top.
-pub fn create(window: &Window, search_template: &str) {
-    let Some(textfield) = textfield_create(Some(&mut AddressFieldDelegate::new())) else {
+/// Creates the (hidden) box as an overlay of `window` (window `win`). Call it after the
+/// window's other views are added so the box stays on top.
+pub fn create(win: WindowId, window: &Window, search_template: &str) {
+    let Some(textfield) = textfield_create(Some(&mut AddressFieldDelegate::new(win))) else {
         return;
     };
     textfield.set_placeholder_text(Some(&CefString::from(PLACEHOLDER)));
@@ -87,7 +87,10 @@ pub fn create(window: &Window, search_template: &str) {
     else {
         return;
     };
-    ADDRESS_BOX.set(Some(AddressBox {
+    let Some(state) = windows::get(win) else {
+        return;
+    };
+    state.address_box.replace(Some(AddressBox {
         window: window.clone(),
         controller,
         panel,
@@ -96,34 +99,30 @@ pub fn create(window: &Window, search_template: &str) {
     }));
 }
 
-pub fn destroy() {
-    ADDRESS_BOX.take();
-}
-
-/// Shows the box with `text` selected and focuses it, closing the settings box: the two never
-/// stack.
-pub fn show(text: &str) {
-    let Some((_, controller, _, textfield)) = handles() else {
+/// Shows the box of window `win` with `text` selected and focuses it, closing the settings box:
+/// the two never stack.
+pub fn show(win: WindowId, text: &str) {
+    let Some((_, controller, _, textfield)) = handles(win) else {
         return;
     };
-    settings_box::close();
+    settings_box::close(win);
     textfield.set_text(Some(&CefString::from(text)));
     textfield.select_all(0);
-    reposition();
+    reposition(win);
     controller.set_visible(1);
     textfield.request_focus();
 }
 
-pub fn hide() {
-    if let Some((_, controller, _, _)) = handles() {
+pub fn hide(win: WindowId) {
+    if let Some((_, controller, _, _)) = handles(win) {
         controller.set_visible(0);
     }
 }
 
-/// Centers the box horizontally, a fifth of the way down the window. Call it whenever the
-/// window is resized.
-pub fn reposition() {
-    let Some((window, controller, panel, _)) = handles() else {
+/// Centers the box horizontally, a fifth of the way down the window. Call it whenever window
+/// `win` is resized.
+pub fn reposition(win: WindowId) {
+    let Some((window, controller, panel, _)) = handles(win) else {
         return;
     };
     let size = window.size();
@@ -132,28 +131,28 @@ pub fn reposition() {
     controller.set_bounds(Some(&window::cef_rect(bounds)));
 }
 
-/// Loads the typed address in the active tab. Empty input keeps the box open.
-fn submit() {
-    let Some((text, search_template)) = ADDRESS_BOX.with_borrow(|address_box| {
-        address_box.as_ref().map(|address_box| {
-            (
-                CefString::from(&address_box.textfield.text()).to_string(),
-                address_box.search_template.clone(),
-            )
-        })
+/// Loads the typed address in the active tab of window `win`. Empty input keeps the box open.
+fn submit(win: WindowId) {
+    let Some((text, search_template)) = with_box(win, |address_box| {
+        (
+            CefString::from(&address_box.textfield.text()).to_string(),
+            address_box.search_template.clone(),
+        )
     }) else {
         return;
     };
     let Some(url) = resolve_input(&text, &search_template, &super::app::local_files()) else {
         return;
     };
-    hide();
-    tabs::navigate_active(&url);
-    tabs::focus_active_page();
+    hide(win);
+    tabs::navigate_active(win, &url);
+    tabs::focus_active_page(win);
 }
 
 wrap_textfield_delegate! {
-    struct AddressFieldDelegate {}
+    struct AddressFieldDelegate {
+        win: WindowId,
+    }
 
     impl ViewDelegate {}
 
@@ -167,11 +166,11 @@ wrap_textfield_delegate! {
                 VK_ESCAPE => false,
                 // Every event of a shortcut is swallowed, so its character never reaches the
                 // field.
-                _ => return commands::handle_event(Some(event)).into(),
+                _ => return commands::handle_event(self.win, Some(event)).into(),
             };
             if event.type_ == KeyEventType::RAWKEYDOWN {
                 // Move the focus once CEF is done with the key event (see `commands`).
-                let mut task = FinishInput::new(submit);
+                let mut task = FinishInput::new(self.win, submit);
                 post_task(ThreadId::UI, Some(&mut task));
             }
             1
@@ -182,16 +181,17 @@ wrap_textfield_delegate! {
 // Runs `Enter` (`submit`) or `Esc` (otherwise) in the address box.
 wrap_task! {
     struct FinishInput {
+        win: WindowId,
         submit: bool,
     }
 
     impl Task {
         fn execute(&self) {
             if self.submit {
-                submit();
+                submit(self.win);
             } else {
-                hide();
-                tabs::focus_active_page();
+                hide(self.win);
+                tabs::focus_active_page(self.win);
             }
         }
     }

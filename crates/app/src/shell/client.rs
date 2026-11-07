@@ -1,22 +1,14 @@
-//! Browser-level callbacks and the list of open browsers. All of it runs on the CEF UI thread,
-//! so the list lives in thread-local storage.
+//! Browser-level callbacks. Each one finds the window of its browser in the registry
+//! (`windows`), which also lists the app's open browsers for the quit rule.
 
-use std::{
-    cell::{Cell, RefCell},
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, time::Duration, time::Instant};
 
 use cef::*;
-use mini_core::{address, home, popups::PopupThrottle};
+use mini_core::{address, home, popups::PopupThrottle, windows::app_quits};
 
-use super::{commands, tabs, window};
+use super::{commands, tabs, window, windows};
 
 thread_local! {
-    static BROWSERS: RefCell<Vec<Browser>> = const { RefCell::new(Vec::new()) };
-    static CLOSING: Cell<bool> = const { Cell::new(false) };
-    /// Popups opened recently in the window. One shared budget (unit key) rather than one per
-    /// opener, so a popup that opens another popup cannot reset the count.
-    static POPUPS: RefCell<PopupThrottle<()>> = RefCell::new(PopupThrottle::default());
     /// At most one "popup blocked" message every 10 seconds, so a page cannot flood stderr.
     static BLOCKED_LOG: RefCell<PopupThrottle<()>> =
         RefCell::new(PopupThrottle::new(1, Duration::from_secs(10)));
@@ -135,20 +127,25 @@ wrap_drag_handler! {
     impl DragHandler {
         fn on_draggable_regions_changed(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
             _regions: Option<&[DraggableRegion]>,
         ) {
             // Pages never drag the window; CEF has just merged the page's regions into the
             // window's, so restore the padding frame's.
-            window::update_drag_regions_later();
+            if let Some(win) = browser.and_then(|browser| windows::of_browser(browser)) {
+                window::update_drag_regions_later(win);
+            }
         }
     }
 }
 
-/// Runs shortcuts pressed while a page has the focus, before the page sees them.
-fn pre_key_event(event: Option<&KeyEvent>) -> i32 {
-    commands::handle_event(event).into()
+/// Runs shortcuts pressed while a page has the focus, in the page's window, before the page
+/// sees them.
+fn pre_key_event(browser: Option<&mut Browser>, event: Option<&KeyEvent>) -> i32 {
+    let win = browser.and_then(|browser| windows::of_browser_or_last(browser));
+    win.is_some_and(|win| commands::handle_event(win, event))
+        .into()
 }
 
 // The native event type differs per platform, so each one gets its own signature.
@@ -159,34 +156,34 @@ wrap_keyboard_handler! {
         #[cfg(target_os = "windows")]
         fn on_pre_key_event(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             event: Option<&KeyEvent>,
             _os_event: Option<&mut sys::MSG>,
             _is_keyboard_shortcut: Option<&mut i32>,
         ) -> i32 {
-            pre_key_event(event)
+            pre_key_event(browser, event)
         }
 
         #[cfg(target_os = "macos")]
         fn on_pre_key_event(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             event: Option<&KeyEvent>,
             _os_event: *mut u8,
             _is_keyboard_shortcut: Option<&mut i32>,
         ) -> i32 {
-            pre_key_event(event)
+            pre_key_event(browser, event)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         fn on_pre_key_event(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             event: Option<&KeyEvent>,
             _os_event: Option<&mut sys::XEvent>,
             _is_keyboard_shortcut: Option<&mut i32>,
         ) -> i32 {
-            pre_key_event(event)
+            pre_key_event(browser, event)
         }
     }
 }
@@ -235,12 +232,16 @@ wrap_life_span_handler! {
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut i32>,
         ) -> i32 {
-            // Popups become tabs, so the window only accepts a few at a time; cancel the rest.
-            if browser.is_none() {
+            // Popups become tabs of their opener's window, so it only accepts a few at a time;
+            // cancel the rest.
+            let Some(browser) = browser else {
                 return 0;
-            }
+            };
+            let Some(state) = windows::of_browser_or_last(browser).and_then(windows::get) else {
+                return 1;
+            };
             let now = Instant::now();
-            let allowed = POPUPS.with_borrow_mut(|popups| popups.allow((), now));
+            let allowed = state.popups.borrow_mut().allow((), now);
             if !allowed && BLOCKED_LOG.with_borrow_mut(|log| log.allow((), now)) {
                 eprintln!("minibrowser: blocking popups (more than 3 within 2 seconds)");
             }
@@ -250,7 +251,7 @@ wrap_life_span_handler! {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
             if let Some(browser) = browser {
-                BROWSERS.with_borrow_mut(|browsers| browsers.push(browser.clone()));
+                windows::browser_created(browser);
             }
         }
 
@@ -260,10 +261,12 @@ wrap_life_span_handler! {
             if browser.is_some_and(|browser| tabs::close_tab_for(browser)) {
                 return 1;
             }
-            // Closing the last browser closes the window and the app; see the DoClose()
-            // documentation in the CEF header for the full close sequence.
-            if BROWSERS.with_borrow(Vec::len) == 1 {
-                CLOSING.set(true);
+            // Closing a window's last browser closes the window, and with the app's last
+            // browser the app; see the DoClose() documentation in the CEF header for the full
+            // close sequence.
+            #[cfg(target_os = "macos")]
+            if windows::browser_count() == 1 {
+                windows::set_closing();
             }
             // Allow the close.
             0
@@ -274,12 +277,10 @@ wrap_life_span_handler! {
             let Some(browser) = browser else {
                 return;
             };
-            let remaining = BROWSERS.with_borrow_mut(|browsers| {
-                browsers.retain(|open| open.is_same(Some(&mut browser.clone())) == 0);
-                browsers.len()
-            });
-            // A closed last tab is replaced by a home tab, whose browser may not exist yet.
-            if remaining == 0 && !tabs::keeps_running() {
+            let remaining = windows::browser_closed(browser);
+            // A closed last tab is replaced by a home tab, whose browser may not exist yet; the
+            // app quits once its last window is gone.
+            if app_quits(remaining, tabs::running_windows()) {
                 quit_message_loop();
             }
         }
@@ -289,30 +290,26 @@ wrap_life_span_handler! {
 /// Whether the last browser is closing, i.e. the app is shutting down.
 #[cfg(target_os = "macos")]
 pub fn is_closing() -> bool {
-    CLOSING.get()
+    windows::is_closing()
 }
 
-/// Asks every open browser to close; the app quits once the last one is gone.
+/// Asks every open browser of every window to close; the app quits once the last one is gone.
 #[cfg(target_os = "macos")]
 pub fn close_all_browsers(force_close: bool) {
-    tabs::start_quitting();
-    let browsers = BROWSERS.with_borrow(Vec::clone);
-    for browser in browsers {
+    for win in windows::ids() {
+        tabs::start_quitting(win);
+    }
+    for browser in windows::browsers() {
         if let Some(host) = browser.host() {
             host.close_browser(force_close.into());
         }
     }
 }
 
-/// Shows the window of the first open browser.
+/// Shows the last active window.
 #[cfg(target_os = "macos")]
 pub fn show_main_window() {
-    let Some(mut browser) = BROWSERS.with_borrow(|browsers| browsers.first().cloned()) else {
-        return;
-    };
-    if let Some(window) =
-        browser_view_get_for_browser(Some(&mut browser)).and_then(|view| view.window())
-    {
+    if let Some(window) = windows::last_active().and_then(window::window) {
         window.show();
     }
 }
