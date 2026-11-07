@@ -11,3 +11,4 @@ pub mod shortcuts;
 pub mod strip;
 pub mod tabs;
 pub mod top_bar;
+pub mod windows;
