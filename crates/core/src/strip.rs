@@ -1,4 +1,7 @@
-//! Tab strip geometry: how wide the tab labels are and which of them fit in the strip.
+//! Tab strip geometry: how wide the tab labels are and which of them fit in the strip, and
+//! where a dragged tab goes: along the strip, out of its window or into another window's strip.
+
+use crate::layout::Rect;
 
 /// The labels the strip shows: `count` tabs starting at index `first`, each `tab_width` wide,
 /// and how many tabs are `hidden` because they do not fit.
@@ -98,6 +101,47 @@ pub fn drag_index(x: i32, grab: i32, layout: &StripLayout, spacing: i32) -> Opti
     let center = x - grab + layout.tab_width / 2;
     let slot = center.div_euclid(stride).clamp(0, last);
     Some(layout.first + usize::try_from(slot).ok()?)
+}
+
+/// How far, in pixels, the pointer dragging a tab goes past the top bar (above, below or beyond
+/// either end) before the tab tears off into a window of its own, as in Chrome.
+pub const TEAR_OFF_DISTANCE: i32 = 40;
+
+/// Whether a tab dragged with the pointer at `point` tears off its top bar at `bar` (both in
+/// window coordinates): once the pointer is more than [`TEAR_OFF_DISTANCE`] pixels away from it.
+pub fn tears_off(point: (i32, i32), bar: Rect) -> bool {
+    let outside = |value: i32, start: i32, length: i32| {
+        let last = start + length - 1;
+        (start - value).max(value - last).max(0)
+    };
+    outside(point.0, bar.x, bar.width) > TEAR_OFF_DISTANCE
+        || outside(point.1, bar.y, bar.height) > TEAR_OFF_DISTANCE
+}
+
+/// Where a tab dropped on a strip goes among its tabs, for the pointer at `x` (strip
+/// coordinates) holding the dragged label `grab` pixels from its left edge: before the first
+/// shown tab whose center is right of the dragged label's center, else after the shown tabs.
+/// The dragged label is as wide as the strip's labels.
+pub fn drop_index(x: i32, grab: i32, layout: &StripLayout, spacing: i32) -> usize {
+    let width = layout.tab_width;
+    let stride = width + spacing;
+    let center = x - grab.clamp(0, (width - 1).max(0)) + width / 2;
+    let before = (0..layout.count)
+        .take_while(|slot| {
+            i32::try_from(*slot).is_ok_and(|slot| slot * stride + width / 2 < center)
+        })
+        .count();
+    layout.first + before
+}
+
+/// Where the pointer sits, in window coordinates, in a window whose only tab it drags: on the
+/// tab's label, `grab` pixels from its left edge (within its `tab_width`), halfway down the
+/// strip `strip_height` pixels tall below a frame `padding` pixels wide.
+pub fn torn_tab_offset(grab: i32, tab_width: i32, padding: i32, strip_height: i32) -> (i32, i32) {
+    (
+        padding + grab.clamp(0, (tab_width - 1).max(0)),
+        padding + strip_height / 2,
+    )
 }
 
 #[cfg(test)]
@@ -319,6 +363,72 @@ mod tests {
         assert_eq!(drag_index(-300, 50, &strip, GAP), Some(5));
         assert_eq!(drag_index(2000, 50, &strip, GAP), Some(8));
         assert_eq!(drag_index(10, 50, &layout(944, 0, 0), GAP), None);
+    }
+
+    fn bar() -> Rect {
+        // An 8 px frame: the bar 28 px tall right below it, across a 1280 px window.
+        Rect {
+            x: 8,
+            y: 8,
+            width: 1264,
+            height: 28,
+        }
+    }
+
+    #[test]
+    fn a_tab_tears_off_only_past_the_distance_from_the_bar() {
+        // On the bar and up to the distance away from it, the tab stays in the strip.
+        for point in [
+            (100, 8),
+            (100, 35),
+            (100, 8 - 40),
+            (100, 35 + 40),
+            (8 - 40, 20),
+        ] {
+            assert!(!tears_off(point, bar()), "{point:?}");
+        }
+        assert!(!tears_off((1271 + 40, 20), bar()));
+        // One pixel further, above, below or beyond either end, it tears off.
+        for point in [(100, 8 - 41), (100, 35 + 41), (8 - 41, 20), (1271 + 41, 20)] {
+            assert!(tears_off(point, bar()), "{point:?}");
+        }
+    }
+
+    #[test]
+    fn a_dropped_tab_goes_before_the_first_tab_whose_center_is_past_its_own() {
+        let strip = scrolled();
+        // Centers of the shown tabs 5..9: 50, 151, 252, 353. Held at its middle, the dragged
+        // label's center is the pointer.
+        assert_eq!(drop_index(10, 50, &strip, GAP), 5);
+        assert_eq!(drop_index(50, 50, &strip, GAP), 5);
+        assert_eq!(drop_index(51, 50, &strip, GAP), 6);
+        assert_eq!(drop_index(252, 50, &strip, GAP), 7);
+        assert_eq!(drop_index(253, 50, &strip, GAP), 8);
+        // Past the last center, after the shown tabs.
+        assert_eq!(drop_index(354, 50, &strip, GAP), 9);
+        assert_eq!(drop_index(2000, 50, &strip, GAP), 9);
+        assert_eq!(drop_index(-300, 50, &strip, GAP), 5);
+        // Held near its left edge: its center is 40 px right of the pointer.
+        assert_eq!(drop_index(10, 10, &strip, GAP), 5);
+        assert_eq!(drop_index(11, 10, &strip, GAP), 6);
+        // A grab wider than the strip's labels counts from the label's right edge.
+        assert_eq!(
+            drop_index(10, 500, &strip, GAP),
+            drop_index(10, 99, &strip, GAP)
+        );
+        // A strip without tabs takes it as its first.
+        assert_eq!(drop_index(10, 50, &layout(944, 0, 0), GAP), 0);
+    }
+
+    #[test]
+    fn a_torn_off_tab_sits_under_the_pointer_where_it_was_held() {
+        // Held 30 px into its label: the pointer is 30 px into the new window's only tab,
+        // halfway down the strip below the frame.
+        assert_eq!(torn_tab_offset(30, 220, 8, 28), (38, 22));
+        assert_eq!(torn_tab_offset(30, 220, 0, 28), (30, 14));
+        // A grab past the new label's width stays on it.
+        assert_eq!(torn_tab_offset(400, 220, 8, 28), (8 + 219, 22));
+        assert_eq!(torn_tab_offset(-5, 220, 8, 28), (8, 22));
     }
 
     #[test]
