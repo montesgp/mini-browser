@@ -323,6 +323,35 @@ pub fn strip_point(win: WindowId, point: (i32, i32)) -> Option<(i32, i32)> {
     Some((point.0 - bar.x - strip.x, point.1 - bar.y - strip.y))
 }
 
+/// Whether `screen` (a point on the screen) lies in the bar's area of window `win`, the area
+/// that reveals its bar, while the window is not minimized.
+#[cfg(target_os = "windows")]
+pub fn in_bar_area(win: WindowId, screen: &Point) -> bool {
+    let Some(window) = with_bar(win, |bar| bar.window.clone()) else {
+        return false;
+    };
+    if window.is_minimized() == 1 {
+        return false;
+    }
+    let origin = window::origin_in_screen(&window);
+    let point = (screen.x - origin.x, screen.y - origin.y);
+    zone(win, &window, Some(point)) == top_bar::Pointer::Bar
+}
+
+/// Where `point` (window coordinates) is relative to the bar's area of `window` (window `win`).
+fn zone(win: WindowId, window: &Window, point: Option<(i32, i32)>) -> top_bar::Pointer {
+    let padding = window::padding(win);
+    // A maximized window on Windows reaches past the screen's top; the pointer stops there.
+    let cut = window::overhang(window);
+    top_bar::pointer_zone(
+        point,
+        window.size().width,
+        cut,
+        i32::try_from(padding).unwrap_or(0),
+        STRIP_HEIGHT,
+    )
+}
+
 /// Shows or hides the bar of window `win` for the pointer's place and the time.
 fn update(win: WindowId) {
     let Some((window, controller, spacer, mode)) = with_bar(win, |bar| {
@@ -335,20 +364,10 @@ fn update(win: WindowId) {
     }) else {
         return;
     };
-    let padding = window::padding(win);
-    let size = window.size();
     let point = (window.is_minimized() == 0)
         .then(|| pointer_in(&window))
         .flatten();
-    // A maximized window on Windows reaches past the screen's top; the pointer stops there.
-    let cut = window::overhang(&window);
-    let pointer = top_bar::pointer_zone(
-        point,
-        size.width,
-        cut,
-        i32::try_from(padding).unwrap_or(0),
-        STRIP_HEIGHT,
-    );
+    let pointer = zone(win, &window, point);
     let Some(visible) = with_bar_mut(win, |bar| bar.state.update(mode, pointer, Instant::now()))
     else {
         return;

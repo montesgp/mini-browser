@@ -25,7 +25,7 @@ const ICON_32_PNG: &[u8] = include_bytes!("../../../../assets/icon/icon-32.png")
 const ICON_PNG: &[u8] = include_bytes!("../../../../assets/icon/icon.png");
 
 /// Initial window size in density-independent pixels; the window opens centered.
-const INITIAL_SIZE: Size = Size {
+pub const INITIAL_SIZE: Size = Size {
     width: 1280,
     height: 800,
 };
@@ -78,22 +78,27 @@ pub fn open(client: Client, url: Option<String>) {
 }
 
 /// Opens a top-level window holding the tab `incoming` moved from window `origin`, where the
-/// window's tabs return. Gives `incoming` back when the window cannot be created.
-pub fn open_moved(client: Client, origin: WindowId, incoming: Incoming) -> Option<Incoming> {
+/// window's tabs return, and returns it. When the window cannot be created, gives `incoming`
+/// back, or nothing when the failed window already returned the tab to `origin`.
+pub fn open_moved(
+    client: Client,
+    origin: WindowId,
+    incoming: Incoming,
+) -> Result<WindowId, Option<Incoming>> {
     let win = windows::add();
     let Some(state) = windows::get(win) else {
-        return Some(incoming);
+        return Err(Some(incoming));
     };
     state.origin.set(Some(origin));
     state.incoming.replace(Some(incoming));
     // The window shows itself and adds the tab once created.
     let mut delegate = MiniWindowDelegate::new(win, client, None);
     if window_create_top_level(Some(&mut delegate)).is_some() {
-        return None;
+        return Ok(win);
     }
     let incoming = state.incoming.take();
     windows::remove(win);
-    incoming
+    Err(incoming)
 }
 
 /// Where a window opened from `window` goes on the screen: a little right of and below it, with
