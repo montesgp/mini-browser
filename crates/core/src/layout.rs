@@ -155,6 +155,60 @@ pub fn loading_segment(width: i32, elapsed_ms: u64, period_ms: u64) -> (i32, i32
     (left as i32, (right - left) as i32)
 }
 
+/// Where a window dragged by its tab goes when the pointer releases it at a screen's edge, like
+/// Windows' Aero Snap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Snap {
+    /// The left half of the screen's work area.
+    LeftHalf,
+    /// The right half of the screen's work area.
+    RightHalf,
+    /// The whole work area: the window maximizes.
+    Maximize,
+}
+
+/// How close, in pixels, the pointer gets to a screen's left, right or top edge for a window
+/// released there to snap. The pointer stops at an outer edge; at an edge shared with another
+/// screen it passes on, so the band is a few pixels wide.
+pub const SNAP_EDGE: i32 = 4;
+
+/// Where a window released with the pointer at `point` snaps on the screen whose bounds are
+/// `screen` (both in screen coordinates): within [`SNAP_EDGE`] pixels of its left or right edge
+/// it fills that half, of its top edge it maximizes, elsewhere (or off the screen) it stays.
+/// In a top corner, the side wins.
+pub fn snap_target(point: (i32, i32), screen: Rect) -> Option<Snap> {
+    let (x, y) = point;
+    if !screen.contains(x, y) {
+        return None;
+    }
+    if x < screen.x + SNAP_EDGE {
+        Some(Snap::LeftHalf)
+    } else if x >= screen.x + screen.width - SNAP_EDGE {
+        Some(Snap::RightHalf)
+    } else if y < screen.y + SNAP_EDGE {
+        Some(Snap::Maximize)
+    } else {
+        None
+    }
+}
+
+/// The bounds a window snapped to a half of the screen whose work area is `work_area` takes:
+/// that half, the whole height; the right half takes the odd pixel. `None` for
+/// [`Snap::Maximize`], which maximizes the window instead.
+pub fn snap_bounds(snap: Snap, work_area: Rect) -> Option<Rect> {
+    let left = work_area.width / 2;
+    let (x, width) = match snap {
+        Snap::LeftHalf => (work_area.x, left),
+        Snap::RightHalf => (work_area.x + left, work_area.width - left),
+        Snap::Maximize => return None,
+    };
+    Some(Rect {
+        x,
+        width,
+        ..work_area
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +441,79 @@ mod tests {
                 ..outside
             }
         );
+    }
+
+    /// A 1920 × 1080 screen right of the primary one, its taskbar taking the bottom 48 pixels.
+    fn side_screen() -> (Rect, Rect) {
+        (rect(1080, -231, 1920, 1080), rect(1080, -231, 1920, 1032))
+    }
+
+    #[test]
+    fn a_window_released_at_a_side_edge_snaps_to_that_half() {
+        let (screen, _) = side_screen();
+        for x in [1080, 1080 + SNAP_EDGE - 1] {
+            assert_eq!(snap_target((x, 300), screen), Some(Snap::LeftHalf), "x {x}");
+        }
+        for x in [2999, 3000 - SNAP_EDGE] {
+            assert_eq!(
+                snap_target((x, 300), screen),
+                Some(Snap::RightHalf),
+                "x {x}"
+            );
+        }
+        // The bottom edge does nothing, as in Windows.
+        assert_eq!(snap_target((2000, 848), screen), None);
+    }
+
+    #[test]
+    fn a_window_released_at_the_top_edge_maximizes() {
+        let (screen, _) = side_screen();
+        for y in [-231, -231 + SNAP_EDGE - 1] {
+            assert_eq!(
+                snap_target((2000, y), screen),
+                Some(Snap::Maximize),
+                "y {y}"
+            );
+        }
+        // In a top corner, the side wins.
+        assert_eq!(snap_target((1080, -231), screen), Some(Snap::LeftHalf));
+        assert_eq!(snap_target((2999, -231), screen), Some(Snap::RightHalf));
+    }
+
+    #[test]
+    fn a_window_released_away_from_the_edges_or_off_the_screen_stays() {
+        let (screen, _) = side_screen();
+        assert_eq!(snap_target((2000, 300), screen), None);
+        assert_eq!(snap_target((1080 + SNAP_EDGE, 300), screen), None);
+        assert_eq!(snap_target((3000 - SNAP_EDGE - 1, 300), screen), None);
+        assert_eq!(snap_target((2000, -231 + SNAP_EDGE), screen), None);
+        // Points on another screen are that screen's business.
+        assert_eq!(snap_target((1079, 300), screen), None);
+        assert_eq!(snap_target((3000, 300), screen), None);
+        assert_eq!(snap_target((2000, -232), screen), None);
+    }
+
+    #[test]
+    fn a_snapped_window_fills_half_of_the_work_area() {
+        let (_, work) = side_screen();
+        assert_eq!(
+            snap_bounds(Snap::LeftHalf, work),
+            Some(rect(1080, -231, 960, 1032))
+        );
+        assert_eq!(
+            snap_bounds(Snap::RightHalf, work),
+            Some(rect(2040, -231, 960, 1032))
+        );
+        // An odd width: the right half takes the extra pixel, so the halves fill it.
+        let odd = rect(0, 0, 1081, 1872);
+        assert_eq!(
+            snap_bounds(Snap::LeftHalf, odd),
+            Some(rect(0, 0, 540, 1872))
+        );
+        assert_eq!(
+            snap_bounds(Snap::RightHalf, odd),
+            Some(rect(540, 0, 541, 1872))
+        );
+        assert_eq!(snap_bounds(Snap::Maximize, work), None);
     }
 }
