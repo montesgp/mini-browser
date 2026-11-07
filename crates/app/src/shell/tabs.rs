@@ -486,7 +486,7 @@ pub fn start_quitting(win: WindowId) {
 
 /// Whether window `win` is open and not closing, so the app runs on without browsers for a
 /// moment while a home tab replaces the closed last tab.
-fn keeps_running(win: WindowId) -> bool {
+pub fn keeps_running(win: WindowId) -> bool {
     with_shell(win, |shell| !shell.quitting).unwrap_or(false)
 }
 

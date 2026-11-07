@@ -91,9 +91,17 @@ pub fn last_active() -> Option<WindowId> {
 
 /// The window a tab of window `win` returns to (see `Windows::return_target`).
 pub fn return_target(win: WindowId) -> Option<WindowId> {
+    // Closing windows are found before the registry is borrowed: the check reads each window's
+    // tabs.
+    let closing: Vec<WindowId> = ids()
+        .into_iter()
+        .filter(|id| !tabs::keeps_running(*id))
+        .collect();
     REGISTRY.with_borrow(|registry| {
         let origin = registry.windows.get(win)?.origin.get();
-        registry.windows.return_target(win, origin)
+        registry
+            .windows
+            .return_target_skipping(win, origin, |id| closing.contains(&id))
     })
 }
 

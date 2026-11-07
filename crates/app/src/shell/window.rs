@@ -41,6 +41,14 @@ pub struct Incoming {
     pub bounds: Rect,
 }
 
+/// A window opened for a moved tab that could not be built gives the tab back to its source
+/// window. The window is never shown and counts as no running window.
+fn give_back(state: &windows::WindowState) {
+    if let (Some(incoming), Some(origin)) = (state.incoming.take(), state.origin.get()) {
+        tabs::adopt_moved(origin, incoming.tab, incoming.view);
+    }
+}
+
 /// The window and the view inset by the padding frame.
 pub struct Frame {
     window: Window,
@@ -427,14 +435,17 @@ wrap_window_delegate! {
         }
 
         fn on_window_created(&self, window: Option<&mut Window>) {
-            let (Some(window), Some(state), Some(settings)) =
-                (window, windows::get(self.win), settings_box::settings())
-            else {
+            let (Some(window), Some(state)) = (window, windows::get(self.win)) else {
+                return;
+            };
+            let Some(settings) = settings_box::settings() else {
+                give_back(&state);
                 return;
             };
             let win = self.win;
             let Some(container) = panel_create(Some(&mut DarkPanelDelegate::new(BACKGROUND_COLOR, 0)))
             else {
+                give_back(&state);
                 return;
             };
             container.set_to_box_layout(Some(&pages_layout(0)));

@@ -87,15 +87,26 @@ impl<S> Windows<S> {
     /// from by a move, while it is open; else the most recently active other window. `None`
     /// for a window not opened by a move (no `origin`) and when no other window is open.
     pub fn return_target(&self, from: WindowId, origin: Option<WindowId>) -> Option<WindowId> {
+        self.return_target_skipping(from, origin, |_| false)
+    }
+
+    /// [`Windows::return_target`], never choosing a window for which `closing` is true: a tab
+    /// joining a window that is closing would never be asked to close.
+    pub fn return_target_skipping(
+        &self,
+        from: WindowId,
+        origin: Option<WindowId>,
+        closing: impl Fn(WindowId) -> bool,
+    ) -> Option<WindowId> {
         origin?;
         origin
-            .filter(|origin| *origin != from && self.get(*origin).is_some())
+            .filter(|origin| *origin != from && self.get(*origin).is_some() && !closing(*origin))
             .or_else(|| {
                 self.recent
                     .iter()
                     .rev()
                     .copied()
-                    .find(|known| *known != from)
+                    .find(|known| *known != from && !closing(*known))
             })
     }
 
@@ -134,6 +145,25 @@ mod tests {
         assert!(!windows.activate(a));
         windows.activate(b);
         assert_eq!(windows.last_active(), Some(b));
+    }
+
+    #[test]
+    fn a_tab_never_returns_to_a_closing_window() {
+        let (mut windows, [a, b, c]) = three();
+        windows.activate(b);
+        windows.activate(a);
+        // The origin `a` is closing: the tab goes to the last active other window, `b`.
+        assert_eq!(
+            windows.return_target_skipping(c, Some(a), |w| w == a),
+            Some(b)
+        );
+        // Every other window is closing: nowhere to go.
+        assert_eq!(windows.return_target_skipping(c, Some(a), |w| w != c), None);
+        // Nothing closing: the origin.
+        assert_eq!(
+            windows.return_target_skipping(c, Some(a), |_| false),
+            Some(a)
+        );
     }
 
     fn three() -> (Windows<&'static str>, [WindowId; 3]) {
