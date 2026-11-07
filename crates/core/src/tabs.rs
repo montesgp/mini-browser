@@ -53,8 +53,12 @@ impl Tabs {
     /// Opens an empty tab right after the active one (or at the end) and activates it, like a
     /// page's popup.
     pub fn open(&mut self) -> TabId {
-        let index = self.active.map_or(self.tabs.len(), |active| active + 1);
-        self.open_at(index)
+        self.open_at(self.after_active())
+    }
+
+    /// The position right after the active tab, or the end of the list without one.
+    pub fn after_active(&self) -> usize {
+        self.active.map_or(self.tabs.len(), |active| active + 1)
     }
 
     /// Opens an empty tab at the end of the list and activates it, like `Ctrl/Cmd+T`.
@@ -63,15 +67,17 @@ impl Tabs {
     }
 
     fn open_at(&mut self, index: usize) -> TabId {
+        self.insert_at(Tab::default(), index)
+    }
+
+    /// Adds `tab`, taken from another list ([`Tabs::take`]), at `index` (clamped to the end)
+    /// with its title, URL and loading state, and activates it. Ids are unique within a list
+    /// only, so the tab gets a new one, which is returned.
+    pub fn insert_at(&mut self, tab: Tab, index: usize) -> TabId {
         self.next_id += 1;
         let id = self.next_id;
-        self.tabs.insert(
-            index,
-            Tab {
-                id,
-                ..Tab::default()
-            },
-        );
+        let index = index.min(self.tabs.len());
+        self.tabs.insert(index, Tab { id, ..tab });
         self.active = Some(index);
         id
     }
@@ -96,17 +102,22 @@ impl Tabs {
     /// Closes `id`. Closing the active tab activates its right neighbor, else its left one.
     /// Returns `false` (and changes nothing) when `id` is unknown.
     pub fn close(&mut self, id: TabId) -> bool {
-        let Some(index) = self.index_of(id) else {
-            return false;
-        };
-        self.tabs.remove(index);
+        self.take(id).is_some()
+    }
+
+    /// Removes `id` and returns it with its title, URL and loading state, to move it to another
+    /// list; the next active tab is chosen as by [`Tabs::close`]. `None` (and no change) when
+    /// `id` is unknown.
+    pub fn take(&mut self, id: TabId) -> Option<Tab> {
+        let index = self.index_of(id)?;
+        let tab = self.tabs.remove(index);
         self.active = match self.active {
             _ if self.tabs.is_empty() => None,
             Some(active) if active > index => Some(active - 1),
             Some(active) if active == index => Some(index.min(self.tabs.len() - 1)),
             other => other,
         };
-        true
+        Some(tab)
     }
 
     /// Activates `id`. Returns `false` (and changes nothing) when `id` is unknown.
@@ -465,5 +476,76 @@ mod tests {
         assert!(tabs.get(home).unwrap().shows_loading());
         tabs.set_url(home, "mini://home/#back");
         assert!(!tabs.get(home).unwrap().shows_loading());
+    }
+
+    #[test]
+    fn taking_a_tab_returns_it_with_its_state_and_activates_like_closing() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        tabs.set_url(b, "https://github.com/");
+        tabs.set_title(b, "GitHub");
+        tabs.set_loading(b, true);
+        let taken = tabs.take(b).unwrap();
+        assert_eq!(
+            taken,
+            Tab {
+                id: b,
+                title: "GitHub".into(),
+                url: "https://github.com/".into(),
+                loading: true,
+            }
+        );
+        assert_eq!(ids(&tabs), vec![a, c]);
+        assert_eq!(active_id(&tabs), Some(c));
+        assert!(tabs.take(c).is_some());
+        assert_eq!(active_id(&tabs), Some(a));
+        assert!(tabs.take(a).is_some());
+        assert!(tabs.is_empty());
+        assert_eq!(tabs.active(), None);
+    }
+
+    #[test]
+    fn taking_an_inactive_or_unknown_tab_keeps_the_active_one() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        assert_eq!(tabs.take(a).map(|tab| tab.id), Some(a));
+        assert_eq!(active_id(&tabs), Some(b));
+        assert_eq!(tabs.take(99), None);
+        assert_eq!(ids(&tabs), vec![b, c]);
+        assert_eq!(active_id(&tabs), Some(b));
+    }
+
+    #[test]
+    fn an_inserted_tab_keeps_its_state_gets_a_new_id_and_becomes_active() {
+        let (mut from, [_, moved, _]) = three_with_middle_active();
+        from.set_url(moved, "https://vercel.com/");
+        from.set_title(moved, "Vercel");
+        let tab = from.take(moved).unwrap();
+        let (mut to, [a, b, c]) = three_with_middle_active();
+        let index = to.after_active();
+        assert_eq!(index, 2);
+        let id = to.insert_at(tab, index);
+        assert!(![a, b, c].contains(&id));
+        assert_eq!(ids(&to), vec![a, b, id, c]);
+        assert_eq!(active_id(&to), Some(id));
+        let inserted = to.get(id).unwrap();
+        assert_eq!(inserted.url, "https://vercel.com/");
+        assert_eq!(inserted.title, "Vercel");
+        // Later tabs still get ids of their own.
+        let d = to.open();
+        assert!(![a, b, c, id].contains(&d));
+    }
+
+    #[test]
+    fn inserting_past_the_end_or_into_an_empty_list_appends() {
+        let (mut tabs, [a, b, c]) = three_with_middle_active();
+        let id = tabs.insert_at(Tab::default(), 99);
+        assert_eq!(ids(&tabs), vec![a, b, c, id]);
+        assert_eq!(active_id(&tabs), Some(id));
+        let first = tabs.insert_at(Tab::default(), 0);
+        assert_eq!(tabs.index_of(first), Some(0));
+        let mut empty = Tabs::new();
+        assert_eq!(empty.after_active(), 0);
+        let only = empty.insert_at(Tab::default(), 0);
+        assert_eq!(ids(&empty), vec![only]);
+        assert_eq!(active_id(&empty), Some(only));
     }
 }

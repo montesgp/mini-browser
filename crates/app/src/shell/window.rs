@@ -4,7 +4,7 @@
 //! delegates are derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
 use cef::{sys::cef_color_id_t, *};
-use mini_core::layout;
+use mini_core::{layout, tabs::Tab};
 
 use super::{
     address_box, commands, loading_line, settings_box, tab_strip, tabs, top_bar,
@@ -29,6 +29,25 @@ const INITIAL_SIZE: Size = Size {
     width: 1280,
     height: 800,
 };
+
+/// How far right and down from its source window a window opened by moving a tab sits.
+const MOVED_WINDOW_OFFSET: i32 = 32;
+
+/// A tab moving into a new window: its entry and live browser view, and the window's bounds on
+/// the screen.
+pub struct Incoming {
+    pub tab: Tab,
+    pub view: BrowserView,
+    pub bounds: Rect,
+}
+
+/// A window opened for a moved tab that could not be built gives the tab back to its source
+/// window. The window is never shown and counts as no running window.
+fn give_back(state: &windows::WindowState) {
+    if let (Some(incoming), Some(origin)) = (state.incoming.take(), state.origin.get()) {
+        tabs::adopt_moved(origin, incoming.tab, incoming.view);
+    }
+}
 
 /// The window and the view inset by the padding frame.
 pub struct Frame {
@@ -55,6 +74,48 @@ pub fn open(client: Client, url: Option<String>) {
     let mut delegate = MiniWindowDelegate::new(win, client, url);
     if window_create_top_level(Some(&mut delegate)).is_none() {
         windows::remove(win);
+    }
+}
+
+/// Opens a top-level window holding the tab `incoming` moved from window `origin`, where the
+/// window's tabs return. Gives `incoming` back when the window cannot be created.
+pub fn open_moved(client: Client, origin: WindowId, incoming: Incoming) -> Option<Incoming> {
+    let win = windows::add();
+    let Some(state) = windows::get(win) else {
+        return Some(incoming);
+    };
+    state.origin.set(Some(origin));
+    state.incoming.replace(Some(incoming));
+    // The window shows itself and adds the tab once created.
+    let mut delegate = MiniWindowDelegate::new(win, client, None);
+    if window_create_top_level(Some(&mut delegate)).is_some() {
+        return None;
+    }
+    let incoming = state.incoming.take();
+    windows::remove(win);
+    incoming
+}
+
+/// Where a window opened from `window` goes on the screen: a little right of and below it, with
+/// its size, inside its screen's work area.
+pub fn next_to(window: &Window) -> Rect {
+    let source = core_rect(&window.bounds_in_screen());
+    let work_area = window
+        .display()
+        .map_or(source, |display| core_rect(&display.work_area()));
+    cef_rect(layout::offset_window(
+        source,
+        MOVED_WINDOW_OFFSET,
+        work_area,
+    ))
+}
+
+fn core_rect(rect: &Rect) -> layout::Rect {
+    layout::Rect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
     }
 }
 
@@ -374,14 +435,17 @@ wrap_window_delegate! {
         }
 
         fn on_window_created(&self, window: Option<&mut Window>) {
-            let (Some(window), Some(state), Some(settings)) =
-                (window, windows::get(self.win), settings_box::settings())
-            else {
+            let (Some(window), Some(state)) = (window, windows::get(self.win)) else {
+                return;
+            };
+            let Some(settings) = settings_box::settings() else {
+                give_back(&state);
                 return;
             };
             let win = self.win;
             let Some(container) = panel_create(Some(&mut DarkPanelDelegate::new(BACKGROUND_COLOR, 0)))
             else {
+                give_back(&state);
                 return;
             };
             container.set_to_box_layout(Some(&pages_layout(0)));
@@ -419,9 +483,22 @@ wrap_window_delegate! {
             // Views reports no middle clicks or drags; on Windows a hook on this thread does.
             #[cfg(target_os = "windows")]
             super::mouse_hook::install(win, window);
-            window.center_window(Some(&INITIAL_SIZE));
-            window.show();
-            tabs::open_tab(win, self.url.as_deref());
+            // A window opened by moving a tab sits next to its source and shows that tab.
+            let incoming = state.incoming.take();
+            match incoming {
+                Some(incoming) => {
+                    window.set_bounds(Some(&incoming.bounds));
+                    window.show();
+                    window.activate();
+                    tabs::adopt_moved(win, incoming.tab, incoming.view);
+                    tabs::focus_active_page_later(win);
+                }
+                None => {
+                    window.center_window(Some(&INITIAL_SIZE));
+                    window.show();
+                    tabs::open_tab(win, self.url.as_deref());
+                }
+            }
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {

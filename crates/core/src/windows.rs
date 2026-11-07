@@ -83,6 +83,33 @@ impl<S> Windows<S> {
         self.entries.len()
     }
 
+    /// The window a tab of window `from` returns to: `origin`, the window `from` was opened
+    /// from by a move, while it is open; else the most recently active other window. `None`
+    /// for a window not opened by a move (no `origin`) and when no other window is open.
+    pub fn return_target(&self, from: WindowId, origin: Option<WindowId>) -> Option<WindowId> {
+        self.return_target_skipping(from, origin, |_| false)
+    }
+
+    /// [`Windows::return_target`], never choosing a window for which `closing` is true: a tab
+    /// joining a window that is closing would never be asked to close.
+    pub fn return_target_skipping(
+        &self,
+        from: WindowId,
+        origin: Option<WindowId>,
+        closing: impl Fn(WindowId) -> bool,
+    ) -> Option<WindowId> {
+        origin?;
+        origin
+            .filter(|origin| *origin != from && self.get(*origin).is_some() && !closing(*origin))
+            .or_else(|| {
+                self.recent
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|known| *known != from && !closing(*known))
+            })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -93,6 +120,18 @@ impl<S> Windows<S> {
 /// tab has no browser for a moment but keeps running.
 pub fn app_quits(browsers_left: usize, windows_running: usize) -> bool {
     browsers_left == 0 && windows_running == 0
+}
+
+/// Whether the active tab can move to a new window: not when it is its window's only tab, as
+/// in Chrome, since the new window would only replace the old one.
+pub fn can_move_to_new_window(tabs_in_window: usize) -> bool {
+    tabs_in_window > 1
+}
+
+/// Whether a window left without tabs (its last tab closed or moved to another window) closes:
+/// it does while `other_windows` stay open; the app's only window gets a home tab instead.
+pub fn closes_without_tabs(other_windows: usize) -> bool {
+    other_windows > 0
 }
 
 #[cfg(test)]
@@ -106,6 +145,25 @@ mod tests {
         assert!(!windows.activate(a));
         windows.activate(b);
         assert_eq!(windows.last_active(), Some(b));
+    }
+
+    #[test]
+    fn a_tab_never_returns_to_a_closing_window() {
+        let (mut windows, [a, b, c]) = three();
+        windows.activate(b);
+        windows.activate(a);
+        // The origin `a` is closing: the tab goes to the last active other window, `b`.
+        assert_eq!(
+            windows.return_target_skipping(c, Some(a), |w| w == a),
+            Some(b)
+        );
+        // Every other window is closing: nowhere to go.
+        assert_eq!(windows.return_target_skipping(c, Some(a), |w| w != c), None);
+        // Nothing closing: the origin.
+        assert_eq!(
+            windows.return_target_skipping(c, Some(a), |_| false),
+            Some(a)
+        );
     }
 
     fn three() -> (Windows<&'static str>, [WindowId; 3]) {
@@ -202,5 +260,54 @@ mod tests {
         // Another window's browsers are still open.
         assert!(!app_quits(2, 0));
         assert!(!app_quits(1, 1));
+    }
+
+    #[test]
+    fn a_moved_tab_returns_to_its_origin_while_it_is_open() {
+        let (mut windows, [a, b, c]) = three();
+        windows.activate(b);
+        assert_eq!(windows.return_target(c, Some(a)), Some(a));
+        assert_eq!(windows.return_target(c, Some(b)), Some(b));
+    }
+
+    #[test]
+    fn without_its_origin_a_tab_returns_to_the_last_active_other_window() {
+        let (mut windows, [a, b, c]) = three();
+        windows.remove(a);
+        windows.activate(b);
+        windows.activate(c);
+        // `c` itself is the most recent one; the tab goes to the window active before it.
+        assert_eq!(windows.return_target(c, Some(a)), Some(b));
+        // An origin that is the window itself is not a target either.
+        assert_eq!(windows.return_target(c, Some(c)), Some(b));
+        windows.activate(b);
+        assert_eq!(windows.return_target(c, Some(a)), Some(b));
+    }
+
+    #[test]
+    fn a_tab_has_nowhere_to_return_alone_or_outside_a_moved_window() {
+        let mut windows = Windows::new();
+        let a = windows.add(());
+        assert_eq!(windows.return_target(a, Some(a + 1)), None);
+        assert_eq!(windows.return_target(a, None), None);
+        let b = windows.add(());
+        // `a` was not opened by a move.
+        assert_eq!(windows.return_target(a, None), None);
+        assert_eq!(windows.return_target(b, Some(a)), Some(a));
+    }
+
+    #[test]
+    fn only_a_window_with_other_tabs_can_move_its_tab_to_a_new_window() {
+        assert!(!can_move_to_new_window(0));
+        assert!(!can_move_to_new_window(1));
+        assert!(can_move_to_new_window(2));
+        assert!(can_move_to_new_window(9));
+    }
+
+    #[test]
+    fn a_window_without_tabs_closes_only_while_other_windows_stay_open() {
+        assert!(!closes_without_tabs(0));
+        assert!(closes_without_tabs(1));
+        assert!(closes_without_tabs(3));
     }
 }

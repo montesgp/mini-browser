@@ -6,7 +6,8 @@
 use cef::*;
 use mini_core::{
     home::HOME_URL,
-    tabs::{TabId, Tabs},
+    tabs::{Tab, TabId, Tabs},
+    windows::{can_move_to_new_window, closes_without_tabs},
 };
 
 use super::{
@@ -118,25 +119,35 @@ fn create_tab(win: WindowId, url: Option<&str>, place: Place) {
         Some(&mut window::MiniBrowserViewDelegate::new()),
     );
     if let Some(view) = view {
-        add_tab(win, view, Some(url), place);
+        let tab = Tab {
+            url: url.to_owned(),
+            ..Tab::default()
+        };
+        add_tab(win, view, tab, place);
     }
 }
 
 /// Adds an already created browser view (a popup) as a new active tab of window `win` after
 /// the active one.
 pub fn adopt_popup(win: WindowId, view: BrowserView) {
-    add_tab(win, view, None, Place::AfterActive);
+    add_tab(win, view, Tab::default(), Place::AfterActive);
 }
 
-fn add_tab(win: WindowId, view: BrowserView, url: Option<&str>, place: Place) {
+/// Adds the tab `tab`, moved with its live browser view from another window, to window `win`
+/// after the active tab, and activates it.
+pub fn adopt_moved(win: WindowId, tab: Tab, view: BrowserView) {
+    add_tab(win, view, tab, Place::AfterActive);
+}
+
+/// Adds `view` as tab `tab` (its title, URL and loading state) and activates it. Returns
+/// `false`, adding nothing, when window `win` has no tabs (it is gone).
+fn add_tab(win: WindowId, view: BrowserView, tab: Tab, place: Place) -> bool {
     let Some(container) = with_shell(win, |shell| {
-        let id = match place {
-            Place::AfterActive => shell.tabs.open(),
-            Place::End => shell.tabs.open_at_end(),
+        let index = match place {
+            Place::AfterActive => shell.tabs.after_active(),
+            Place::End => shell.tabs.len(),
         };
-        if let Some(url) = url {
-            shell.tabs.set_url(id, url);
-        }
+        let id = shell.tabs.insert_at(tab, index);
         // The views follow the model's order (the container's order does not matter: it shows
         // one view at a time).
         let index = shell.tabs.index_of(id).unwrap_or(shell.views.len());
@@ -145,10 +156,99 @@ fn add_tab(win: WindowId, view: BrowserView, url: Option<&str>, place: Place) {
             .insert(index.min(shell.views.len()), (id, view.clone()));
         shell.container.clone()
     }) else {
-        return;
+        return false;
     };
     container.add_child_view(Some(&mut View::from(&view)));
     show_active(win);
+    true
+}
+
+/// Moves the active tab of window `win`, with its live page (no reload, its state kept), into a
+/// new window next to it. Nothing when it is the window's only tab.
+pub fn move_to_new_window(win: WindowId) {
+    let Some((window, client)) =
+        with_shell(win, |shell| (shell.window.clone(), shell.client.clone()))
+    else {
+        return;
+    };
+    let Some((tab, view, _)) = take_active(win, can_move_to_new_window) else {
+        return;
+    };
+    let incoming = window::Incoming {
+        tab,
+        view,
+        bounds: window::next_to(&window),
+    };
+    // A window that cannot open leaves the tab where it was.
+    if let Some(incoming) = window::open_moved(client, win, incoming) {
+        add_tab(win, incoming.view, incoming.tab, Place::AfterActive);
+    }
+}
+
+/// Moves the active tab of window `win`, opened by a move, back to the window it came from (or
+/// another open window, see `Windows::return_target`), after that window's active tab. A window
+/// left without tabs closes.
+pub fn return_tab(win: WindowId) {
+    let Some(target) = windows::return_target(win) else {
+        return;
+    };
+    let Some((tab, view, emptied)) = take_active(win, |_| true) else {
+        return;
+    };
+    if !add_tab(target, view.clone(), tab.clone(), Place::AfterActive) {
+        add_tab(win, view, tab, Place::AfterActive);
+        return;
+    }
+    if emptied {
+        close_emptied(win);
+    }
+    window::bring_to_front(target);
+    focus_active_page_later(target);
+}
+
+/// Takes the active tab of window `win` and its browser view out of the window, to move them to
+/// another one, when `allowed` says so for the window's tab count. The window shows its next
+/// tab; returns whether none is left.
+fn take_active(
+    win: WindowId,
+    allowed: impl FnOnce(usize) -> bool,
+) -> Option<(Tab, BrowserView, bool)> {
+    let (container, tab, view, emptied) = with_shell(win, |shell| {
+        if !allowed(shell.tabs.len()) {
+            return None;
+        }
+        let id = shell.tabs.active()?.id;
+        let index = shell.views.iter().position(|(tab, _)| *tab == id)?;
+        let tab = shell.tabs.take(id)?;
+        let (_, view) = shell.views.remove(index);
+        Some((shell.container.clone(), tab, view, shell.tabs.is_empty()))
+    })
+    .flatten()?;
+    container.remove_child_view(Some(&mut View::from(&view)));
+    if !emptied {
+        show_active(win);
+    }
+    Some((tab, view, emptied))
+}
+
+/// Closes window `win`, left without tabs while other windows stay open.
+fn close_emptied(win: WindowId) {
+    start_quitting(win);
+    // After CEF is done with the current event (a closing browser's `do_close`).
+    let mut task = CloseWindow::new(win);
+    post_task(ThreadId::UI, Some(&mut task));
+}
+
+wrap_task! {
+    struct CloseWindow {
+        win: WindowId,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            quit(self.win);
+        }
+    }
 }
 
 /// Makes the active tab's view the only visible one and focuses it, hides the address box,
@@ -188,6 +288,25 @@ fn hide_all_but(views: &[BrowserView], shown: &BrowserView) {
 pub fn focus_active_page(win: WindowId) {
     if let Some(view) = with_shell(win, |shell| shell.active_view().cloned()).flatten() {
         view.request_focus();
+    }
+}
+
+/// Focuses the active page of window `win` once CEF is done with its current work: a window
+/// just shown or brought to the front does not take the focus before that.
+pub fn focus_active_page_later(win: WindowId) {
+    let mut task = FocusPage::new(win);
+    post_task(ThreadId::UI, Some(&mut task));
+}
+
+wrap_task! {
+    struct FocusPage {
+        win: WindowId,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            focus_active_page(self.win);
+        }
     }
 }
 
@@ -309,10 +428,12 @@ pub fn close_tab_for(browser: &Browser) -> bool {
     // Tear the view down after CEF returns from `do_close`.
     let mut task = RemoveView::new(container, view);
     post_task(ThreadId::UI, Some(&mut task));
-    if last {
-        new_tab(win);
-    } else {
+    if !last {
         show_active(win);
+    } else if closes_without_tabs(other_running_windows(win)) {
+        close_emptied(win);
+    } else {
+        new_tab(win);
     }
     true
 }
@@ -350,6 +471,13 @@ pub fn quit(win: WindowId) {
     }
 }
 
+/// Closes every window, so the app quits (`Ctrl/Cmd+Q`).
+pub fn quit_all() {
+    for win in windows::ids() {
+        quit(win);
+    }
+}
+
 /// Marks window `win` as closing, so its last tab closes the window instead of returning home.
 /// Call it before the browsers are asked to close for quitting.
 pub fn start_quitting(win: WindowId) {
@@ -358,7 +486,7 @@ pub fn start_quitting(win: WindowId) {
 
 /// Whether window `win` is open and not closing, so the app runs on without browsers for a
 /// moment while a home tab replaces the closed last tab.
-fn keeps_running(win: WindowId) -> bool {
+pub fn keeps_running(win: WindowId) -> bool {
     with_shell(win, |shell| !shell.quitting).unwrap_or(false)
 }
 
@@ -367,6 +495,14 @@ pub fn running_windows() -> usize {
     windows::ids()
         .into_iter()
         .filter(|win| keeps_running(*win))
+        .count()
+}
+
+/// How many windows other than `win` are open and not closing.
+fn other_running_windows(win: WindowId) -> usize {
+    windows::ids()
+        .into_iter()
+        .filter(|other| *other != win && keeps_running(*other))
         .count()
 }
 

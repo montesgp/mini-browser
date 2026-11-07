@@ -8,6 +8,8 @@ pub mod key {
     pub const RIGHT: i32 = 0x27;
     pub const F: i32 = 0x46;
     pub const L: i32 = 0x4C;
+    pub const M: i32 = 0x4D;
+    pub const N: i32 = 0x4E;
     pub const Q: i32 = 0x51;
     pub const R: i32 = 0x52;
     pub const T: i32 = 0x54;
@@ -35,6 +37,10 @@ pub enum Command {
     GoToTab(usize),
     /// Activates the last tab (`Ctrl/Cmd+9`).
     GoToLastTab,
+    /// Moves the active tab, page and all, into a new window.
+    MoveTabToNewWindow,
+    /// Moves the active tab of a window opened by a move back to the window it came from.
+    ReturnTab,
 }
 
 /// Modifier keys held during a key press. `command` is the macOS Command key.
@@ -106,6 +112,8 @@ pub fn command_for(
         ((key::TAB, ctrl), Command::NextTab),
         ((key::TAB, ctrl_shift), Command::PreviousTab),
         ((key::F, primary_shift), Command::ToggleTopBar),
+        ((key::N, primary_shift), Command::MoveTabToNewWindow),
+        ((key::M, primary_shift), Command::ReturnTab),
         (back, Command::Back),
         (forward, Command::Forward),
         ((key::R, primary), Command::Reload),
@@ -291,6 +299,22 @@ mod tests {
     #[test]
     fn primary_comma_opens_settings() {
         assert_primary(key::COMMA, Command::OpenSettings);
+    }
+
+    #[test]
+    fn primary_shift_n_moves_the_tab_to_a_new_window() {
+        assert_eq!(other(key::N, CTRL_SHIFT), Some(Command::MoveTabToNewWindow));
+        assert_eq!(mac(key::N, CMD_SHIFT), Some(Command::MoveTabToNewWindow));
+        assert_eq!(other(key::N, CTRL), None);
+        assert_eq!(mac(key::N, CTRL_SHIFT), None);
+    }
+
+    #[test]
+    fn primary_shift_m_returns_the_tab_to_its_window() {
+        assert_eq!(other(key::M, CTRL_SHIFT), Some(Command::ReturnTab));
+        assert_eq!(mac(key::M, CMD_SHIFT), Some(Command::ReturnTab));
+        assert_eq!(other(key::M, CTRL), None);
+        assert_eq!(other(key::M, CMD_SHIFT), None);
     }
 
     #[test]

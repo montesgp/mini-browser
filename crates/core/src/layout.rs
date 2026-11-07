@@ -120,6 +120,23 @@ pub fn click_closes_box(
     !box_bounds.contains(x, y) && (on_bar || !page.contains(x, y))
 }
 
+/// The screen bounds of a window opened next to the window at `source` (screen coordinates):
+/// `offset` pixels right and down with the same size, kept inside the screen's `work_area` and
+/// shrunk to it when larger (a maximized source).
+pub fn offset_window(source: Rect, offset: i32, work_area: Rect) -> Rect {
+    let width = source.width.min(work_area.width);
+    let height = source.height.min(work_area.height);
+    let place = |start: i32, area_start: i32, area_size: i32, size: i32| {
+        (start + offset).clamp(area_start, area_start + area_size - size)
+    };
+    Rect {
+        x: place(source.x, work_area.x, work_area.width, width),
+        y: place(source.y, work_area.y, work_area.height, height),
+        width,
+        height,
+    }
+}
+
 /// The visible part `(x, width)` of the loading line's moving segment in a line `width` pixels
 /// wide, `elapsed_ms` into the animation. The segment, a third of the line, sweeps from just
 /// left of the line to just right of it once every `period_ms`, then starts over.
@@ -298,5 +315,77 @@ mod tests {
     fn the_loading_segment_of_an_empty_line_is_empty() {
         assert_eq!(loading_segment(0, 600, 1200), (0, 0));
         assert_eq!(loading_segment(900, 600, 0), (0, 0));
+    }
+
+    #[test]
+    fn a_window_opens_offset_from_its_source_with_the_same_size() {
+        let work = Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+        let source = Rect {
+            x: 100,
+            y: 50,
+            width: 1280,
+            height: 800,
+        };
+        assert_eq!(
+            offset_window(source, 32, work),
+            Rect {
+                x: 132,
+                y: 82,
+                ..source
+            }
+        );
+    }
+
+    #[test]
+    fn an_offset_window_stays_inside_the_work_area() {
+        let work = Rect {
+            x: -1920,
+            y: 40,
+            width: 1920,
+            height: 1000,
+        };
+        // Near the bottom-right corner: pushed back so it ends at the work area's edges.
+        let near_corner = Rect {
+            x: -1300,
+            y: 220,
+            width: 1280,
+            height: 800,
+        };
+        assert_eq!(
+            offset_window(near_corner, 32, work),
+            Rect {
+                x: -1280,
+                y: 240,
+                ..near_corner
+            }
+        );
+        // Larger than the work area (a maximized source): shrunk to it, at its origin.
+        let maximized = Rect {
+            x: -1928,
+            y: 32,
+            width: 1936,
+            height: 1016,
+        };
+        assert_eq!(offset_window(maximized, 32, work), work);
+        // Left of and above the work area: moved inside.
+        let outside = Rect {
+            x: -2500,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(
+            offset_window(outside, 32, work),
+            Rect {
+                x: -1920,
+                y: 40,
+                ..outside
+            }
+        );
     }
 }
