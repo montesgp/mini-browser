@@ -105,6 +105,8 @@ fn command(name: &str, query: &str) -> Option<HomeCommand> {
         "top-bar" => run(Command::ToggleTopBar),
         "quit" => run(Command::Quit),
         "last-tab" => run(Command::GoToLastTab),
+        "move-to-new-window" => run(Command::MoveTabToNewWindow),
+        "return-tab" => run(Command::ReturnTab),
         _ => None,
     }
 }
@@ -180,6 +182,8 @@ mod tests {
             ("top-bar", Command::ToggleTopBar),
             ("quit", Command::Quit),
             ("last-tab", Command::GoToLastTab),
+            ("move-to-new-window", Command::MoveTabToNewWindow),
+            ("return-tab", Command::ReturnTab),
         ] {
             assert_eq!(
                 command_of(&format!("mini://home/cmd/{name}")),
@@ -259,6 +263,8 @@ mod tests {
             "mini://home/cmd/focus-address",
             "mini://home/cmd/NEW-TAB",
             "mini://home/cmd/new-tab/x",
+            "mini://home/cmd/new-window",
+            "mini://home/cmd/return-tab/x",
             "mini://home/other.html",
             "mini://home/cmd",
             "mini://homes/",
