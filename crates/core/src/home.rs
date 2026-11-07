@@ -107,6 +107,7 @@ fn command(name: &str, query: &str) -> Option<HomeCommand> {
         "last-tab" => run(Command::GoToLastTab),
         "move-to-new-window" => run(Command::MoveTabToNewWindow),
         "return-tab" => run(Command::ReturnTab),
+        "settings" => run(Command::OpenSettings),
         _ => None,
     }
 }
@@ -184,6 +185,7 @@ mod tests {
             ("last-tab", Command::GoToLastTab),
             ("move-to-new-window", Command::MoveTabToNewWindow),
             ("return-tab", Command::ReturnTab),
+            ("settings", Command::OpenSettings),
         ] {
             assert_eq!(
                 command_of(&format!("mini://home/cmd/{name}")),
@@ -258,7 +260,7 @@ mod tests {
     fn unknown_paths_and_commands_have_no_route() {
         for url in [
             "mini://home/cmd/",
-            "mini://home/cmd/settings",
+            "mini://home/cmd/settings/x",
             "mini://home/cmd/open-settings",
             "mini://home/cmd/focus-address",
             "mini://home/cmd/NEW-TAB",
