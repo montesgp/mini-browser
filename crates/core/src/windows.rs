@@ -99,6 +99,15 @@ pub fn app_quits(browsers_left: usize, windows_running: usize) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn activating_a_removed_window_changes_nothing() {
+        let (mut windows, [a, b, _c]) = three();
+        windows.remove(a);
+        assert!(!windows.activate(a));
+        windows.activate(b);
+        assert_eq!(windows.last_active(), Some(b));
+    }
+
     fn three() -> (Windows<&'static str>, [WindowId; 3]) {
         let mut windows = Windows::new();
         let a = windows.add("a");

@@ -133,7 +133,7 @@ wrap_drag_handler! {
         ) {
             // Pages never drag the window; CEF has just merged the page's regions into the
             // window's, so restore the padding frame's.
-            if let Some(win) = browser.and_then(|browser| windows::of_browser(browser)) {
+            if let Some(win) = browser.and_then(|browser| windows::of_browser_or_last(browser)) {
                 window::update_drag_regions_later(win);
             }
         }

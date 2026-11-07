@@ -550,7 +550,8 @@ wrap_browser_view_delegate! {
             // window; DevTools keeps its default window.
             let opener = browser_view
                 .and_then(|view| view.browser())
-                .and_then(|browser| windows::of_browser_or_last(&browser));
+                .and_then(|browser| windows::of_browser_or_last(&browser))
+                .or_else(windows::last_active);
             match (popup_browser_view, opener) {
                 (Some(popup), Some(win)) if is_devtools == 0 => {
                     tabs::adopt_popup(win, popup.clone());
