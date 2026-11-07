@@ -114,6 +114,12 @@
       row.append(element('kbd', '', shortcut.keys));
       if (shortcut.padding) {
         row.append(paddingControls(index));
+        // The rest of the row opens the settings box, like its shortcut; the − and + only step.
+        row.classList.add('settings');
+        row.title = 'Open settings';
+        row.addEventListener('click', (event) => {
+          if (!event.target.closest('button')) run('settings');
+        });
       } else if (info) {
         // A shortcut with no single action to run from here: listed, not clickable.
         row.append(element('span', 'label', shortcut.label));

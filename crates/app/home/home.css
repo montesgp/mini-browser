@@ -128,8 +128,13 @@ button:focus-visible {
   cursor: default;
 }
 
-button.row:hover {
+button.row:hover,
+.row.settings:hover {
   background: var(--hover);
+}
+
+.row.settings {
+  cursor: pointer;
 }
 
 .label {
