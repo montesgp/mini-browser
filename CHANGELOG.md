@@ -4,6 +4,19 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- On Windows, `Esc` cancels a tab drag, as in Chrome: a tab dragged along the bar goes back to its place, a tab dragged out into a new window goes back into its window at its place (the new window closes), and a window moved by its only tab goes back where it was. Nothing reloads.
+- On Windows, a window you move by its tab snaps like any other window: let go with the mouse at the left or right edge of a screen and it fills that half, at the top edge it maximizes.
+
+### Changed
+
+- The settings box's `×` is brighter at rest, so it is easier to find; it still lights up under the mouse.
+
+### Fixed
+
+- In `Auto` mode, the top bar of a window you had just moved or torn off by its tab (and then maximized) sometimes did not appear at the top edge: letting go of the drag counted as a click on the tab, which hides the bar until the mouse leaves the top.
+
 ## [0.4.0] - 2026-11-07
 
 ### Added

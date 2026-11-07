@@ -10,30 +10,38 @@
 //! only tab moves its window. That window then follows the pointer from a short timer until the
 //! button is up, rather than the system's move loop, which would hold CEF's tasks until the
 //! drop. A tab dragged onto another app window's bar joins that window at once, as in Chrome,
-//! and the drag goes on in its strip.
+//! and the drag goes on in its strip. A window released with the pointer at a screen's left,
+//! right or top edge snaps to that half or maximizes, like Windows' Aero Snap.
+//!
+//! `Esc` undoes a drag, as in Chrome: the tab goes back to its place, in its own window, and a
+//! window moved by its only tab goes back where it was. The same timer reads the key, so `Esc`
+//! works while the pointer rests, whichever view has the keyboard focus.
 
 use std::cell::Cell;
 
 use cef::*;
 use mini_core::{
-    layout,
+    layout::{self, Snap},
     strip::{beyond_drag_threshold, tears_off},
     tabs::TabId,
-    windows::dragging_moves_window,
+    windows::{CancelDrag, DragStart, cancel_drag, dragging_moves_window},
 };
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     System::Threading::GetCurrentThreadId,
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyState, VK_LBUTTON, VK_RBUTTON},
+        Input::KeyboardAndMouse::{
+            GetAsyncKeyState, GetKeyState, VK_ESCAPE, VK_LBUTTON, VK_RBUTTON,
+        },
         WindowsAndMessaging::{
             CallNextHookEx, GA_ROOT, GW_HWNDNEXT, GWL_EXSTYLE, GetAncestor, GetCursorPos,
             GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongW, GetWindowRect, HC_ACTION,
-            HHOOK, IsIconic, IsWindowVisible, MOUSEHOOKSTRUCT, SM_SWAPBUTTON, SW_RESTORE,
-            SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_MOUSE, WM_LBUTTONDBLCLK,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP,
-            WM_MOUSEMOVE, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMBUTTONDBLCLK,
-            WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCMOUSEMOVE, WS_EX_TRANSPARENT,
+            HHOOK, IsIconic, IsWindowVisible, MOUSEHOOKSTRUCT, SHOW_WINDOW_CMD, SM_SWAPBUTTON,
+            SW_MAXIMIZE, SW_RESTORE, SetWindowsHookExW, ShowWindow, UnhookWindowsHookEx, WH_MOUSE,
+            WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
+            WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
+            WM_NCMBUTTONDBLCLK, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCMOUSEMOVE,
+            WS_EX_TRANSPARENT,
         },
     },
 };
@@ -45,7 +53,8 @@ use super::{
     windows::{self, WindowId},
 };
 
-/// How often a window dragged by its tab follows the pointer.
+/// How often a tab drag checks `Esc` and the button, and a window dragged by its tab follows
+/// the pointer.
 const FOLLOW_MS: i64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +98,18 @@ struct WindowDrag {
     grab: i32,
 }
 
+/// The tab drag in progress, from the press becoming a drag until the button is up or `Esc`
+/// undoes it.
+#[derive(Debug, Clone, Copy)]
+struct Session {
+    start: DragStart,
+    /// The window the dragged tab is in now.
+    current: WindowId,
+    /// Where the window moved by its only tab was (its restored bounds on the screen) and
+    /// whether it was maximized.
+    home: Option<(layout::Rect, bool)>,
+}
+
 /// A window's part of the hook: its native handle and its gesture in progress.
 pub struct WindowMouse {
     handle: Cell<HWND>,
@@ -109,6 +130,18 @@ thread_local! {
     static HOOK: Cell<HHOOK> = const { Cell::new(std::ptr::null_mut()) };
     /// The window following the pointer, while the user drags it by its tab.
     static WINDOW_DRAG: Cell<Option<WindowDrag>> = const { Cell::new(None) };
+    /// The tab drag in progress.
+    static SESSION: Cell<Option<Session>> = const { Cell::new(None) };
+    /// Whether [`watch`] runs.
+    static WATCHING: Cell<bool> = const { Cell::new(false) };
+    /// Whether a tab drag started since the left button last went down in an app window.
+    static DRAGGED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether the left button's release now ends a tab drag rather than a click: set when a drag
+/// starts, until the left button goes down again.
+pub fn press_ends_drag() -> bool {
+    DRAGGED.get()
 }
 
 /// The app window whose native handle is `handle`.
@@ -203,6 +236,11 @@ unsafe extern "system" fn hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRE
     {
         // SAFETY: for HC_ACTION, `lparam` points to the message's MOUSEHOOKSTRUCT.
         let info = unsafe { &*(lparam as *const MOUSEHOOKSTRUCT) };
+        // Here, before Views sees the press, rather than in the posted task: a quick click's
+        // release could reach a button before the task runs.
+        if kind == Kind::LeftDown {
+            DRAGGED.set(false);
+        }
         // SAFETY: GetAncestor takes any window handle and returns a handle or null.
         let under = window_of(unsafe { GetAncestor(info.hwnd, GA_ROOT) });
         let tracking = windows::find(|state| {
@@ -314,6 +352,10 @@ fn drag(
                 move_window(win, point, grab);
                 return Gesture::None;
             }
+            let Some(index) = tabs::index_of(win, tab) else {
+                return Gesture::None;
+            };
+            start_session(win, index, None);
             if !tabs::is_active(win, tab) {
                 tabs::activate(win, tab);
             }
@@ -378,6 +420,7 @@ fn tear_off(win: WindowId, grab: i32, screen: &Point) {
         height: size.height,
     };
     if let Some(moved) = tabs::tear_off(win, bounds) {
+        set_current(moved);
         follow(WindowDrag {
             win: moved,
             offset,
@@ -400,7 +443,8 @@ fn move_window(win: WindowId, point: (i32, i32), grab: i32) {
     let Some(window) = window::window(win) else {
         return;
     };
-    let offset = if window.is_maximized() == 1 {
+    let maximized = window.is_maximized() == 1;
+    let offset = if maximized {
         restore(win);
         only_tab_grab(grab)
     } else {
@@ -409,34 +453,151 @@ fn move_window(win: WindowId, point: (i32, i32), grab: i32) {
         let bounds = window.bounds_in_screen();
         (point.0 + origin.x - bounds.x, point.1 + origin.y - bounds.y)
     };
+    // A maximized window's restored bounds, read once it is restored.
+    let home = window::core_rect(&window.bounds_in_screen());
+    start_session(win, 0, Some((home, maximized)));
     follow(WindowDrag { win, offset, grab });
 }
 
 /// Restores maximized window `win`. CEF's `Window::restore` leaves a frameless maximized window
 /// maximized while a mouse button is down, so the window is restored directly.
 fn restore(win: WindowId) {
+    show_window(win, SW_RESTORE);
+}
+
+/// Maximizes window `win` directly, for the same reason as [`restore`].
+fn maximize(win: WindowId) {
+    show_window(win, SW_MAXIMIZE);
+}
+
+fn show_window(win: WindowId, command: SHOW_WINDOW_CMD) {
     let handle = handle_of(win);
     if !handle.is_null() {
         // SAFETY: ShowWindow takes any window handle; `handle` is one of the app's windows.
-        unsafe { ShowWindow(handle, SW_RESTORE) };
+        unsafe { ShowWindow(handle, command) };
     }
+}
+
+/// Starts the drag of the tab at `index` among the tabs of window `win`, which moves the window
+/// when `home` (where the window was) is given, and [`watch`]es it.
+fn start_session(win: WindowId, index: usize, home: Option<(layout::Rect, bool)>) {
+    DRAGGED.set(true);
+    SESSION.set(Some(Session {
+        start: DragStart {
+            window: win,
+            index,
+            moves_window: home.is_some(),
+        },
+        current: win,
+        home,
+    }));
+    if !WATCHING.replace(true) {
+        watch_later();
+    }
+}
+
+/// Notes that the dragged tab moved into window `win`.
+fn set_current(win: WindowId) {
+    if let Some(session) = SESSION.get() {
+        SESSION.set(Some(Session {
+            current: win,
+            ..session
+        }));
+    }
+}
+
+/// Ends the tab drag in progress.
+fn end_session() {
+    WINDOW_DRAG.set(None);
+    SESSION.set(None);
 }
 
 /// Starts `drag`: its window follows the pointer until the button is up.
 fn follow(drag: WindowDrag) {
-    if WINDOW_DRAG.replace(Some(drag)).is_none() {
-        follow_pointer();
+    WINDOW_DRAG.set(Some(drag));
+}
+
+/// Runs every [`FOLLOW_MS`] while a tab drag goes on: `Esc` undoes it, a window dragged by its
+/// tab follows the pointer, and the drag ends once the button is up.
+fn watch() {
+    if let Some(session) = SESSION.get() {
+        if escape_down() {
+            cancel(session);
+        } else if WINDOW_DRAG.get().is_some() {
+            follow_pointer();
+        } else if !physical_left_down() {
+            end_session();
+        }
+    }
+    if SESSION.get().is_some() {
+        watch_later();
+    } else {
+        WATCHING.set(false);
     }
 }
 
-/// Moves the dragged window under the pointer, then checks again in [`FOLLOW_MS`], until the
-/// button is up or its tab reaches another window's bar and joins it.
+fn watch_later() {
+    let mut task = Watch::new();
+    post_delayed_task(ThreadId::UI, Some(&mut task), FOLLOW_MS);
+}
+
+wrap_task! {
+    struct Watch {}
+
+    impl Task {
+        fn execute(&self) {
+            watch();
+        }
+    }
+}
+
+/// Undoes the tab drag `session`, as in Chrome: a tab dragged along its strip goes back to its
+/// place, a tab dragged out of its window goes back into it at its place (a window left without
+/// tabs closes), and a window moved by its only tab goes back where it was.
+fn cancel(session: Session) {
+    end_session();
+    set_gesture(session.current, Gesture::None);
+    let source_open = tabs::keeps_running(session.start.window);
+    match cancel_drag(session.start, session.current, source_open) {
+        CancelDrag::MoveBack { window } => {
+            if let Some(home) = session.home {
+                put_back(window, home);
+            }
+        }
+        CancelDrag::Reorder { window, index } => {
+            if let Some(tab) = tabs::active(window) {
+                tabs::move_tab(window, tab, index);
+            }
+        }
+        CancelDrag::Return {
+            from,
+            window,
+            index,
+        } => {
+            tabs::drop_active(from, window, Some(index));
+        }
+        CancelDrag::Nothing => {}
+    }
+}
+
+/// Puts window `win` back at `bounds` on the screen, maximized again when it was.
+fn put_back(win: WindowId, (bounds, maximized): (layout::Rect, bool)) {
+    if let Some(window) = window::window(win) {
+        window.set_bounds(Some(&window::cef_rect(bounds)));
+        if maximized {
+            maximize(win);
+        }
+    }
+}
+
+/// Moves the dragged window under the pointer until the button is up, where it snaps at a
+/// screen's edge, or its tab reaches another window's bar and joins it.
 fn follow_pointer() {
     let Some(drag) = WINDOW_DRAG.get() else {
         return;
     };
     let (Some(window), Some(pixels)) = (window::window(drag.win), cursor()) else {
-        WINDOW_DRAG.set(None);
+        end_session();
         return;
     };
     let screen = to_screen(pixels);
@@ -445,12 +606,14 @@ fn follow_pointer() {
         if physical_left_down() {
             join(drag.win, target, drag.grab, &screen);
         } else {
+            end_session();
             tabs::drop_active(drag.win, target, drop_index(target, &screen, drag.grab));
         }
         return;
     }
     if !physical_left_down() {
-        WINDOW_DRAG.set(None);
+        end_session();
+        snap(&window, drag.win, &screen);
         return;
     }
     let position = Point {
@@ -466,17 +629,25 @@ fn follow_pointer() {
             window.set_position(Some(&position));
         }
     }
-    let mut task = FollowPointer::new();
-    post_delayed_task(ThreadId::UI, Some(&mut task), FOLLOW_MS);
 }
 
-wrap_task! {
-    struct FollowPointer {}
-
-    impl Task {
-        fn execute(&self) {
-            follow_pointer();
+/// Snaps `window` (window `win`), released with the pointer at `screen`, at the edge of the
+/// screen under the pointer: to the half of its work area at the left or right edge, maximized
+/// at the top edge (see `layout::snap_target`).
+fn snap(window: &Window, win: WindowId, screen: &Point) {
+    let Some(display) = display_get_nearest_point(Some(screen), 0) else {
+        return;
+    };
+    let target = layout::snap_target((screen.x, screen.y), window::core_rect(&display.bounds()));
+    match target {
+        Some(Snap::Maximize) => maximize(win),
+        Some(half) => {
+            if let Some(bounds) = layout::snap_bounds(half, window::core_rect(&display.work_area()))
+            {
+                window.set_bounds(Some(&window::cef_rect(bounds)));
+            }
         }
+        None => {}
     }
 }
 
@@ -486,6 +657,7 @@ fn join(win: WindowId, target: WindowId, grab: i32, screen: &Point) {
     if tabs::drop_active(win, target, drop_index(target, screen, grab))
         && let Some(tab) = tabs::active(target)
     {
+        set_current(target);
         set_gesture(target, Gesture::Dragging { tab, grab });
     }
 }
@@ -591,6 +763,12 @@ fn to_screen(pixels: POINT) -> Point {
         x: pixels.x,
         y: pixels.y,
     }))
+}
+
+/// Whether `Esc` is down now, whichever window has the keyboard focus.
+fn escape_down() -> bool {
+    // SAFETY: GetAsyncKeyState takes a virtual-key code and reads the system's state.
+    unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE)) < 0 }
 }
 
 /// Whether the primary mouse button is down now, whichever window gets the mouse messages:
