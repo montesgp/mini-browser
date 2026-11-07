@@ -5,8 +5,8 @@
 //! followed by how many are hidden (`+3`). A `+` button right after the last shown tab opens a
 //! new tab at the end. Views reports no middle clicks or drags to button delegates
 //! (`on_button_pressed` has no event flags, and buttons only react to the left button), so on
-//! Windows `mouse_hook` closes a tab on a middle click and reorders tabs dragged along the strip,
-//! hit-testing the labels with [`tab_at`].
+//! Windows `mouse_hook` closes a tab on a middle click, reorders tabs dragged along the strip,
+//! hit-testing the labels with [`tab_at`], and moves tabs dragged out of it or onto it.
 
 use cef::*;
 #[cfg(target_os = "windows")]
@@ -128,6 +128,22 @@ pub fn tab_at(win: WindowId, x: i32) -> Option<(TabId, i32)> {
 pub fn drag_index(win: WindowId, x: i32, grab: i32) -> Option<usize> {
     let (layout, _) = shown(win)?;
     strip::drag_index(x, grab, &layout, TAB_SPACING)
+}
+
+/// Where a tab dropped on the strip of window `win` goes among its tabs, for the pointer at `x`
+/// (strip coordinates) holding the label `grab` pixels from its left edge.
+#[cfg(target_os = "windows")]
+pub fn drop_index(win: WindowId, x: i32, grab: i32) -> Option<usize> {
+    let (layout, _) = shown(win)?;
+    Some(strip::drop_index(x, grab, &layout, TAB_SPACING))
+}
+
+/// Where the pointer holding a tab `grab` pixels from its label's left edge sits in a window
+/// with a frame `padding` pixels wide whose only tab it is, in window coordinates.
+#[cfg(target_os = "windows")]
+pub fn only_tab_grab(grab: i32, padding: i32) -> (i32, i32) {
+    // A lone tab has the widest label, unless the window is narrower than that.
+    strip::torn_tab_offset(grab, TAB_MAX_WIDTH, padding, STRIP_HEIGHT)
 }
 
 /// The label layout for `entries` in the strip's current width.

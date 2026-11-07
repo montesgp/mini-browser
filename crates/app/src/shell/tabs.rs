@@ -103,6 +103,9 @@ pub fn open_tab(win: WindowId, url: Option<&str>) {
 enum Place {
     AfterActive,
     End,
+    /// At this index, clamped to the end.
+    #[cfg(target_os = "windows")]
+    At(usize),
 }
 
 fn create_tab(win: WindowId, url: Option<&str>, place: Place) {
@@ -146,6 +149,8 @@ fn add_tab(win: WindowId, view: BrowserView, tab: Tab, place: Place) -> bool {
         let index = match place {
             Place::AfterActive => shell.tabs.after_active(),
             Place::End => shell.tabs.len(),
+            #[cfg(target_os = "windows")]
+            Place::At(index) => index,
         };
         let id = shell.tabs.insert_at(tab, index);
         // The views follow the model's order (the container's order does not matter: it shows
@@ -166,22 +171,38 @@ fn add_tab(win: WindowId, view: BrowserView, tab: Tab, place: Place) -> bool {
 /// Moves the active tab of window `win`, with its live page (no reload, its state kept), into a
 /// new window next to it. Nothing when it is the window's only tab.
 pub fn move_to_new_window(win: WindowId) {
-    let Some((window, client)) =
-        with_shell(win, |shell| (shell.window.clone(), shell.client.clone()))
-    else {
-        return;
-    };
-    let Some((tab, view, _)) = take_active(win, can_move_to_new_window) else {
-        return;
-    };
+    move_active_to_new_window(win, window::next_to);
+}
+
+/// Tears the active tab of window `win`, the tab the user drags, off into a new window at
+/// `bounds` on the screen, like [`move_to_new_window`]. Returns the new window.
+#[cfg(target_os = "windows")]
+pub fn tear_off(win: WindowId, bounds: Rect) -> Option<WindowId> {
+    move_active_to_new_window(win, |_| bounds)
+}
+
+/// Moves the active tab of window `win` into a new window at the bounds `place` gives for the
+/// window, unless it is the window's only tab. Returns the new window.
+fn move_active_to_new_window(
+    win: WindowId,
+    place: impl FnOnce(&Window) -> Rect,
+) -> Option<WindowId> {
+    let (window, client) = with_shell(win, |shell| (shell.window.clone(), shell.client.clone()))?;
+    let (tab, view, _) = take_active(win, can_move_to_new_window)?;
     let incoming = window::Incoming {
         tab,
         view,
-        bounds: window::next_to(&window),
+        bounds: place(&window),
     };
     // A window that cannot open leaves the tab where it was.
-    if let Some(incoming) = window::open_moved(client, win, incoming) {
-        add_tab(win, incoming.view, incoming.tab, Place::AfterActive);
+    match window::open_moved(client, win, incoming) {
+        Ok(moved) => Some(moved),
+        Err(incoming) => {
+            if let Some(incoming) = incoming {
+                add_tab(win, incoming.view, incoming.tab, Place::AfterActive);
+            }
+            None
+        }
     }
 }
 
@@ -189,21 +210,37 @@ pub fn move_to_new_window(win: WindowId) {
 /// another open window, see `Windows::return_target`), after that window's active tab. A window
 /// left without tabs closes.
 pub fn return_tab(win: WindowId) {
-    let Some(target) = windows::return_target(win) else {
-        return;
-    };
+    if let Some(target) = windows::return_target(win) {
+        move_active_into(win, target, Place::AfterActive);
+    }
+}
+
+/// Moves the active tab of window `win`, the tab the user drags, into window `target` at
+/// `index` among its tabs (at the end without one), like [`return_tab`]. Returns whether it
+/// moved.
+#[cfg(target_os = "windows")]
+pub fn drop_active(win: WindowId, target: WindowId, index: Option<usize>) -> bool {
+    target != win
+        && keeps_running(target)
+        && move_active_into(win, target, index.map_or(Place::End, Place::At))
+}
+
+/// Moves the active tab of window `win` into window `target` at `place`, activates it there and
+/// brings `target` to the front. A window left without tabs closes. Returns whether it moved.
+fn move_active_into(win: WindowId, target: WindowId, place: Place) -> bool {
     let Some((tab, view, emptied)) = take_active(win, |_| true) else {
-        return;
+        return false;
     };
-    if !add_tab(target, view.clone(), tab.clone(), Place::AfterActive) {
+    if !add_tab(target, view.clone(), tab.clone(), place) {
         add_tab(win, view, tab, Place::AfterActive);
-        return;
+        return false;
     }
     if emptied {
         close_emptied(win);
     }
     window::bring_to_front(target);
     focus_active_page_later(target);
+    true
 }
 
 /// Takes the active tab of window `win` and its browser view out of the window, to move them to
@@ -370,6 +407,18 @@ pub fn move_tab(win: WindowId, id: TabId, to: usize) {
 #[cfg(target_os = "windows")]
 pub fn index_of(win: WindowId, id: TabId) -> Option<usize> {
     with_shell(win, |shell| shell.tabs.index_of(id)).flatten()
+}
+
+/// The active tab of window `win`.
+#[cfg(target_os = "windows")]
+pub fn active(win: WindowId) -> Option<TabId> {
+    with_shell(win, |shell| shell.tabs.active().map(|tab| tab.id)).flatten()
+}
+
+/// How many tabs window `win` has.
+#[cfg(target_os = "windows")]
+pub fn count(win: WindowId) -> usize {
+    with_shell(win, |shell| shell.tabs.len()).unwrap_or(0)
 }
 
 /// Whether `id` is the active tab.

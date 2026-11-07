@@ -128,6 +128,13 @@ pub fn can_move_to_new_window(tabs_in_window: usize) -> bool {
     tabs_in_window > 1
 }
 
+/// Whether dragging a tab out of its window's strip moves the whole window instead of tearing
+/// the tab off: it does for the window's only tab, as in Chrome, since a new window would only
+/// replace the old one.
+pub fn dragging_moves_window(tabs_in_window: usize) -> bool {
+    tabs_in_window == 1
+}
+
 /// Whether a window left without tabs (its last tab closed or moved to another window) closes:
 /// it does while `other_windows` stay open; the app's only window gets a home tab instead.
 pub fn closes_without_tabs(other_windows: usize) -> bool {
@@ -302,6 +309,17 @@ mod tests {
         assert!(!can_move_to_new_window(1));
         assert!(can_move_to_new_window(2));
         assert!(can_move_to_new_window(9));
+    }
+
+    #[test]
+    fn dragging_a_windows_only_tab_moves_the_window() {
+        assert!(dragging_moves_window(1));
+        assert!(!dragging_moves_window(2));
+        assert!(!dragging_moves_window(9));
+        // Exactly the tabs that cannot move to a new window, apart from an empty window.
+        for tabs in 1..5 {
+            assert_eq!(dragging_moves_window(tabs), !can_move_to_new_window(tabs));
+        }
     }
 
     #[test]
