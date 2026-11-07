@@ -1,6 +1,7 @@
 //! The settings box: a small dark overlay to change the padding frame and when the top bar
 //! shows, with a thin edge in the address box's border color so it stands out on dark pages.
-//! Every change applies at once and is saved to the settings file.
+//! Every window has its own box; the settings are the app's, so every change applies at once to
+//! every window and is saved to the settings file.
 
 use std::{cell::RefCell, path::PathBuf};
 
@@ -14,6 +15,7 @@ use super::{
     address_box::{self, BORDER_COLOR, BOX_COLOR, TEXT_COLOR},
     home, tabs, top_bar,
     window::{self, DarkPanelDelegate},
+    windows::{self, WindowId},
 };
 
 const WIDTH: i32 = 280;
@@ -41,7 +43,7 @@ const SELECTED_COLOR: u32 = 0xFF38_3838;
 
 const VK_ESCAPE: i32 = 0x1B;
 
-struct SettingsBox {
+pub struct SettingsBox {
     window: Window,
     controller: OverlayController,
     panel: Panel,
@@ -52,16 +54,39 @@ struct SettingsBox {
     pinned: LabelButton,
     close: LabelButton,
     not_saved: LabelButton,
+}
+
+/// The app's settings, shared by every window, and where they are saved.
+struct Store {
     settings: Settings,
     path: PathBuf,
+    /// Whether the last change could not be saved.
+    unsaved: bool,
 }
 
 thread_local! {
-    static SETTINGS_BOX: RefCell<Option<SettingsBox>> = const { RefCell::new(None) };
+    static STORE: RefCell<Option<Store>> = const { RefCell::new(None) };
 }
 
-/// Creates the (hidden) box as an overlay of `window`. Changes are saved to `path`.
-pub fn create(window: &Window, settings: Settings, path: PathBuf) {
+/// Starts the app with `settings`; changes are saved to `path`. Call it before the first
+/// window opens.
+pub fn init(settings: Settings, path: PathBuf) {
+    STORE.set(Some(Store {
+        settings,
+        path,
+        unsaved: false,
+    }));
+}
+
+/// Reads the box of window `win` with `f`; `None` before it is created or once it is gone.
+fn with_box<R>(win: WindowId, f: impl FnOnce(&SettingsBox) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let settings_box = state.settings_box.borrow();
+    settings_box.as_ref().map(f)
+}
+
+/// Creates the (hidden) box as an overlay of `window` (window `win`).
+pub fn create(win: WindowId, window: &Window) {
     let Some(panel) = panel_create(Some(&mut DarkPanelDelegate::new(BOX_COLOR, 0))) else {
         return;
     };
@@ -87,22 +112,24 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         Some(auto),
         Some(pinned),
         Some(not_saved),
+        Some(unsaved),
     ) = (
-        text("Settings", TITLE_FONT, TEXT_COLOR),
-        close_button(),
-        text("Padding", FONT, DIM_TEXT_COLOR),
-        step_button("\u{2212}", -1),
-        text("", FONT, TEXT_COLOR),
-        step_button("+", 1),
-        text("Top bar", FONT, DIM_TEXT_COLOR),
-        mode_button(TopBarMode::Auto),
-        mode_button(TopBarMode::Pinned),
-        text(NOT_SAVED, FONT, WARNING_TEXT_COLOR),
+        text(win, "Settings", TITLE_FONT, TEXT_COLOR),
+        close_button(win),
+        text(win, "Padding", FONT, DIM_TEXT_COLOR),
+        step_button(win, "\u{2212}", -1),
+        text(win, "", FONT, TEXT_COLOR),
+        step_button(win, "+", 1),
+        text(win, "Top bar", FONT, DIM_TEXT_COLOR),
+        mode_button(win, TopBarMode::Auto),
+        mode_button(win, TopBarMode::Pinned),
+        text(win, NOT_SAVED, FONT, WARNING_TEXT_COLOR),
+        STORE.with_borrow(|store| store.as_ref().map(|store| store.unsaved)),
     )
     else {
         return;
     };
-    not_saved.set_visible(0);
+    not_saved.set_visible(unsaved.into());
     value.set_horizontal_alignment(HorizontalAlignment::CENTER);
     value.set_minimum_size(Some(&Size {
         width: VALUE_WIDTH,
@@ -129,7 +156,10 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
     else {
         return;
     };
-    SETTINGS_BOX.set(Some(SettingsBox {
+    let Some(state) = windows::get(win) else {
+        return;
+    };
+    state.settings_box.replace(Some(SettingsBox {
         window: window.clone(),
         controller,
         panel,
@@ -140,11 +170,9 @@ pub fn create(window: &Window, settings: Settings, path: PathBuf) {
         pinned,
         close,
         not_saved,
-        settings,
-        path,
     }));
-    show_padding();
-    show_top_bar();
+    show_padding(win);
+    show_top_bar(win);
 }
 
 /// A row with `label` on the left and `controls` on the right.
@@ -163,10 +191,6 @@ fn row(label: &LabelButton, controls: &[&LabelButton]) -> Option<Panel> {
     }
     layout.set_flex_for_view(Some(&mut label_view), 1);
     Some(row)
-}
-
-pub fn destroy() {
-    SETTINGS_BOX.take();
 }
 
 /// Wraps `content` in an [`EDGE`] wide frame in the border color.
@@ -188,9 +212,9 @@ fn edged(content: &Panel) -> Option<Panel> {
 
 /// A non-interactive line of text. Views has no label in the CEF API, so it is a disabled
 /// label button.
-fn text(text: &str, font: &str, color: u32) -> Option<LabelButton> {
+fn text(win: WindowId, text: &str, font: &str, color: u32) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(Choice::None)),
+        Some(&mut SettingsButtonDelegate::new(win, Choice::None)),
         Some(&CefString::from(text)),
     )?;
     button.set_font_list(Some(&CefString::from(font)));
@@ -202,9 +226,12 @@ fn text(text: &str, font: &str, color: u32) -> Option<LabelButton> {
 }
 
 /// A `−` or `+` button that moves the padding by `steps`.
-fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
+fn step_button(win: WindowId, label: &str, steps: i32) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(Choice::Padding(steps))),
+        Some(&mut SettingsButtonDelegate::new(
+            win,
+            Choice::Padding(steps),
+        )),
         Some(&CefString::from(label)),
     )?;
     button.set_font_list(Some(&CefString::from(STEP_FONT)));
@@ -226,9 +253,9 @@ fn step_button(label: &str, steps: i32) -> Option<LabelButton> {
 }
 
 /// The `×` in the header that closes the box.
-fn close_button() -> Option<LabelButton> {
+fn close_button(win: WindowId) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(Choice::Close)),
+        Some(&mut SettingsButtonDelegate::new(win, Choice::Close)),
         Some(&CefString::from("\u{00D7}")),
     )?;
     button.set_font_list(Some(&CefString::from(CLOSE_FONT)));
@@ -248,9 +275,9 @@ fn close_button() -> Option<LabelButton> {
 }
 
 /// An `Auto` or `Pinned` button that sets when the top bar shows.
-fn mode_button(mode: TopBarMode) -> Option<LabelButton> {
+fn mode_button(win: WindowId, mode: TopBarMode) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(Choice::TopBar(mode))),
+        Some(&mut SettingsButtonDelegate::new(win, Choice::TopBar(mode))),
         Some(&CefString::from(mode_name(mode))),
     )?;
     button.set_font_list(Some(&CefString::from(FONT)));
@@ -272,21 +299,20 @@ fn mode_name(mode: TopBarMode) -> &'static str {
     }
 }
 
-/// Highlights the button of the current top bar mode.
-fn show_top_bar() {
-    let Some((mode, buttons)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box.as_ref().map(|settings_box| {
-            (
-                settings_box.settings.top_bar,
-                [
-                    (TopBarMode::Auto, settings_box.auto.clone()),
-                    (TopBarMode::Pinned, settings_box.pinned.clone()),
-                ],
-            )
-        })
-    }) else {
+/// Highlights the button of the current top bar mode in the box of window `win`.
+fn show_top_bar(win: WindowId) {
+    let (Some(settings), Some(buttons)) = (
+        settings(),
+        with_box(win, |settings_box| {
+            [
+                (TopBarMode::Auto, settings_box.auto.clone()),
+                (TopBarMode::Pinned, settings_box.pinned.clone()),
+            ]
+        }),
+    ) else {
         return;
     };
+    let mode = settings.top_bar;
     for (button_mode, button) in buttons {
         let selected = button_mode == mode;
         let (background, text_color) = if selected {
@@ -305,18 +331,18 @@ fn show_top_bar() {
 /// Shows the current padding and dims the button whose direction is at its bound. The button
 /// stays enabled and focusable, so the keyboard focus never jumps to the other one (which
 /// would make `Space` reverse direction); pressing it does nothing.
-fn show_padding() {
-    let Some((settings, minus, value, plus, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box.as_ref().map(|settings_box| {
+fn show_padding(win: WindowId) {
+    let (Some(settings), Some((minus, value, plus, panel))) = (
+        settings(),
+        with_box(win, |settings_box| {
             (
-                settings_box.settings.clone(),
                 settings_box.minus.clone(),
                 settings_box.value.clone(),
                 settings_box.plus.clone(),
                 settings_box.panel.clone(),
             )
-        })
-    }) else {
+        }),
+    ) else {
         return;
     };
     let padding = settings.padding;
@@ -344,25 +370,23 @@ fn show_padding() {
 
 /// The current settings.
 pub fn settings() -> Option<Settings> {
-    SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .map(|settings_box| settings_box.settings.clone())
-    })
+    STORE.with_borrow(|store| store.as_ref().map(|store| store.settings.clone()))
 }
 
-/// Moves the padding by `steps`, applies it to the window and saves it.
+/// Moves the padding by `steps`, applies it to every window and saves it.
 pub fn step(steps: i32) {
     let Some(settings) = change(|settings| settings.with_padding_steps(steps)) else {
         return;
     };
-    window::set_padding(settings.padding);
-    show_padding();
-    // The warning line changes the box's height.
-    reposition();
+    for win in windows::ids() {
+        window::set_padding(win, settings.padding);
+        show_padding(win);
+        // The warning line changes the box's height.
+        reposition(win);
+    }
 }
 
-/// Sets when the top bar shows, applies it and saves it.
+/// Sets when the top bar shows, applies it to every window and saves it.
 fn set_top_bar(mode: TopBarMode) {
     let Some(settings) = change(|settings| Settings {
         top_bar: mode,
@@ -370,39 +394,32 @@ fn set_top_bar(mode: TopBarMode) {
     }) else {
         return;
     };
-    top_bar::set_mode(settings.top_bar);
-    show_top_bar();
-    reposition();
+    for win in windows::ids() {
+        top_bar::set_mode(win, settings.top_bar);
+        show_top_bar(win);
+        reposition(win);
+    }
 }
 
 /// Switches the top bar between auto and pinned and saves it (`Ctrl/Cmd+Shift+F`).
 pub fn toggle_top_bar() {
-    let mode = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .map(|settings_box| settings_box.settings.top_bar)
-    });
-    if let Some(mode) = mode {
-        set_top_bar(mode.toggled());
+    if let Some(settings) = settings() {
+        set_top_bar(settings.top_bar.toggled());
     }
 }
 
 /// Replaces the settings with `new` of them and saves them; returns the new settings, or `None`
-/// when nothing changed. A failed save is reported, shown in the box until a later save
+/// when nothing changed. A failed save is reported, shown in every box until a later save
 /// succeeds, and the change still applies for this run.
 fn change(new: impl FnOnce(&Settings) -> Settings) -> Option<Settings> {
-    let (settings, path, not_saved) = SETTINGS_BOX.with_borrow_mut(|settings_box| {
-        let settings_box = settings_box.as_mut()?;
-        let settings = new(&settings_box.settings);
-        if settings == settings_box.settings {
+    let (settings, path) = STORE.with_borrow_mut(|store| {
+        let store = store.as_mut()?;
+        let settings = new(&store.settings);
+        if settings == store.settings {
             return None;
         }
-        settings_box.settings = settings.clone();
-        Some((
-            settings,
-            settings_box.path.clone(),
-            settings_box.not_saved.clone(),
-        ))
+        store.settings = settings.clone();
+        Some((settings, store.path.clone()))
     })?;
     let saved = settings.save(&path);
     if let Err(error) = &saved {
@@ -411,42 +428,49 @@ fn change(new: impl FnOnce(&Settings) -> Settings) -> Option<Settings> {
             path.display()
         );
     }
-    not_saved.set_visible(saved.is_err().into());
+    STORE.with_borrow_mut(|store| {
+        if let Some(store) = store.as_mut() {
+            store.unsaved = saved.is_err();
+        }
+    });
+    for win in windows::ids() {
+        if let Some(not_saved) = with_box(win, |settings_box| settings_box.not_saved.clone()) {
+            not_saved.set_visible(saved.is_err().into());
+        }
+    }
     // Open home pages show the settings in their commands card.
     home::refresh_state();
     Some(settings)
 }
 
-fn is_visible() -> bool {
-    SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .is_some_and(|settings_box| settings_box.controller.is_visible() == 1)
-    })
+fn is_visible(win: WindowId) -> bool {
+    with_box(win, |settings_box| settings_box.controller.clone())
+        .is_some_and(|controller| controller.is_visible() == 1)
 }
 
-/// Opens the box over the page, or closes it when it is open.
-pub fn toggle() {
-    if is_visible() {
-        hide();
+/// Opens the box of window `win` over the page, or closes it when it is open.
+pub fn toggle(win: WindowId) {
+    if is_visible(win) {
+        hide(win);
         return;
     }
-    let Some((controller, minus, plus, at_max)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box.as_ref().map(|settings_box| {
+    let (Some(settings), Some((controller, minus, plus))) = (
+        settings(),
+        with_box(win, |settings_box| {
             (
                 settings_box.controller.clone(),
                 settings_box.minus.clone(),
                 settings_box.plus.clone(),
-                !settings_box.settings.can_move_padding(1),
             )
-        })
-    }) else {
+        }),
+    ) else {
         return;
     };
-    address_box::hide();
+    let at_max = !settings.can_move_padding(1);
+    address_box::hide(win);
     // Theme changes reset button backgrounds, so show the selected mode again.
-    show_top_bar();
-    reposition();
+    show_top_bar(win);
+    reposition(win);
     controller.set_visible(1);
     // Focus a button, so the window gets `Esc` and the shortcuts.
     let target = if at_max { minus } else { plus };
@@ -454,52 +478,46 @@ pub fn toggle() {
 }
 
 /// Closes the box and gives the keyboard focus back to the page.
-fn hide() {
-    if close() {
-        tabs::focus_active_page();
+fn hide(win: WindowId) {
+    if close(win) {
+        tabs::focus_active_page(win);
     }
 }
 
 /// Closes the open box once the keyboard focus has left it for another view of the active
 /// window, as a click on the page or on a tab moves it there. Clicks inside the box keep the
 /// focus on its buttons; while the window is inactive the box stays open.
-fn close_if_focus_left() {
-    let Some((window, buttons)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box.as_ref().map(|settings_box| {
-            (
-                settings_box.window.clone(),
-                [
-                    settings_box.minus.clone(),
-                    settings_box.plus.clone(),
-                    settings_box.auto.clone(),
-                    settings_box.pinned.clone(),
-                    settings_box.close.clone(),
-                ],
-            )
-        })
+fn close_if_focus_left(win: WindowId) {
+    let Some((window, buttons)) = with_box(win, |settings_box| {
+        (
+            settings_box.window.clone(),
+            [
+                settings_box.minus.clone(),
+                settings_box.plus.clone(),
+                settings_box.auto.clone(),
+                settings_box.pinned.clone(),
+                settings_box.close.clone(),
+            ],
+        )
     }) else {
         return;
     };
-    if !is_visible() || window.is_active() == 0 {
+    if !is_visible(win) || window.is_active() == 0 {
         return;
     }
     if buttons.iter().all(|button| button.has_focus() == 0) {
-        close();
+        close(win);
     }
 }
 
 /// Closes the open box after a left click at `point` (window coordinates) on the frame or the
 /// shown top bar, which take no keyboard focus; clicks inside the box keep it open.
 #[cfg(target_os = "windows")]
-pub fn close_on_click(point: (i32, i32)) {
-    let Some(controller) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .map(|settings_box| settings_box.controller.clone())
-    }) else {
+pub fn close_on_click(win: WindowId, point: (i32, i32)) {
+    let Some(controller) = with_box(win, |settings_box| settings_box.controller.clone()) else {
         return;
     };
-    let Some(page) = window::page_area() else {
+    let Some(page) = window::page_area(win) else {
         return;
     };
     let core_rect = |rect: Rect| layout::Rect {
@@ -509,29 +527,27 @@ pub fn close_on_click(point: (i32, i32)) {
         height: rect.height,
     };
     let bounds = core_rect(controller.bounds());
-    let bar = top_bar::shown_bounds().map(core_rect);
+    let bar = top_bar::shown_bounds(win).map(core_rect);
     if controller.is_visible() == 1 && layout::click_closes_box(point, bounds, page, bar) {
-        hide();
+        hide(win);
     }
 }
 
 wrap_task! {
-    struct CloseIfFocusLeft;
+    struct CloseIfFocusLeft {
+        win: WindowId,
+    }
 
     impl Task {
         fn execute(&self) {
-            close_if_focus_left();
+            close_if_focus_left(self.win);
         }
     }
 }
 
-/// Closes the box without moving the focus. Returns whether the box exists.
-pub fn close() -> bool {
-    let controller = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .map(|settings_box| settings_box.controller.clone())
-    });
+/// Closes the box of window `win` without moving the focus. Returns whether the box exists.
+pub fn close(win: WindowId) -> bool {
+    let controller = with_box(win, |settings_box| settings_box.controller.clone());
     if let Some(controller) = &controller {
         controller.set_visible(0);
     }
@@ -540,14 +556,14 @@ pub fn close() -> bool {
 
 /// While the box is open, `+` and `-` widen and narrow the frame. Returns whether the event
 /// was used.
-pub fn handle_step_keys(event: Option<&KeyEvent>) -> bool {
+pub fn handle_step_keys(win: WindowId, event: Option<&KeyEvent>) -> bool {
     let Some(steps) = event
         .filter(|event| event.type_ == KeyEventType::RAWKEYDOWN)
         .and_then(|event| settings::padding_step_for_key(event.windows_key_code))
     else {
         return false;
     };
-    if !is_visible() {
+    if !is_visible(win) {
         return false;
     }
     step(steps);
@@ -555,28 +571,26 @@ pub fn handle_step_keys(event: Option<&KeyEvent>) -> bool {
 }
 
 /// Closes the open box on `Esc`. Returns whether the event was used.
-pub fn handle_escape(event: Option<&KeyEvent>) -> bool {
+pub fn handle_escape(win: WindowId, event: Option<&KeyEvent>) -> bool {
     let is_escape = event.is_some_and(|event| {
         event.type_ == KeyEventType::RAWKEYDOWN && event.windows_key_code == VK_ESCAPE
     });
-    if is_escape && is_visible() {
-        hide();
+    if is_escape && is_visible(win) {
+        hide(win);
         return true;
     }
     false
 }
 
 /// Puts the box in the bottom-right corner of the page area, out of the way of search fields at
-/// the top or center of pages. Call it whenever the window is resized.
-pub fn reposition() {
-    let Some((controller, panel)) = SETTINGS_BOX.with_borrow(|settings_box| {
-        settings_box
-            .as_ref()
-            .map(|settings_box| (settings_box.controller.clone(), settings_box.panel.clone()))
+/// the top or center of pages. Call it whenever window `win` is resized.
+pub fn reposition(win: WindowId) {
+    let Some((controller, panel)) = with_box(win, |settings_box| {
+        (settings_box.controller.clone(), settings_box.panel.clone())
     }) else {
         return;
     };
-    let Some(area) = window::page_area() else {
+    let Some(area) = window::page_area(win) else {
         return;
     };
     let height = panel.preferred_size().height;
@@ -599,13 +613,14 @@ enum Choice {
 
 wrap_button_delegate! {
     struct SettingsButtonDelegate {
+        win: WindowId,
         choice: Choice,
     }
 
     impl ViewDelegate {
         fn on_blur(&self, _view: Option<&mut View>) {
             // The newly focused view is known once Views is done moving the focus.
-            let mut task = CloseIfFocusLeft::new();
+            let mut task = CloseIfFocusLeft::new(self.win);
             post_task(ThreadId::UI, Some(&mut task));
         }
     }
@@ -616,7 +631,7 @@ wrap_button_delegate! {
                 Choice::None => {}
                 Choice::Padding(steps) => step(steps),
                 Choice::TopBar(mode) => set_top_bar(mode),
-                Choice::Close => hide(),
+                Choice::Close => hide(self.win),
             }
         }
     }

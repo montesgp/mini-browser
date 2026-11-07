@@ -1,8 +1,8 @@
 //! The home page `mini://home/`: serves its files, embedded in the app, and runs the commands
 //! it asks for with `fetch('mini://home/cmd/<name>')`. A command runs only when the request
-//! comes from the main frame of the active tab while that tab shows the home page; any other
-//! request (web pages, frames, other tabs) gets `403` and runs nothing. Routing lives in
-//! `mini_core::home`.
+//! comes from the main frame of the active tab of its own window while that tab shows the home
+//! page, and it runs in that window; any other request (web pages, frames, other tabs) gets
+//! `403` and runs nothing. Routing lives in `mini_core::home`.
 
 use std::{
     borrow::Cow,
@@ -15,7 +15,7 @@ use mini_core::{
     home::{self, Asset, HomeCommand, Route},
 };
 
-use super::{app, commands, settings_box, tabs};
+use super::{app, commands, settings_box, tabs, windows::WindowId};
 
 const INDEX_HTML: &str = include_str!("../../home/index.html");
 const HOME_CSS: &str = include_str!("../../home/home.css");
@@ -36,10 +36,10 @@ pub fn register_handler() {
     );
 }
 
-/// Focuses the home page's address field in the active tab.
-pub fn focus_address_field() {
-    tabs::focus_active_page();
-    tabs::with_active_browser(|browser| {
+/// Focuses the home page's address field in the active tab of window `win`.
+pub fn focus_address_field(win: WindowId) {
+    tabs::focus_active_page(win);
+    tabs::with_active_browser(win, |browser| {
         if let Some(frame) = browser.main_frame() {
             frame.execute_java_script(
                 Some(&CefString::from("window.miniFocusAddress?.()")),
@@ -123,20 +123,21 @@ fn from_home_page(frame: Option<&Frame>, request: &Request) -> bool {
     frame_on_home && request.resource_type() == ResourceType::XHR && method == "GET"
 }
 
-/// Answers `request` on the UI thread: refused unless its browser is the active tab and shows
-/// the home page; otherwise runs the command, if any, and replies with the current state.
+/// Answers `request` on the UI thread: refused unless its browser is the active tab of its own
+/// window and shows the home page; otherwise runs the command, if any, in that window and
+/// replies with the current state.
 fn answer(request: &UiRequest) -> Reply {
-    if !tabs::is_active_home(&request.browser) {
+    let Some(win) = tabs::active_home_window(&request.browser) else {
         return Reply::refused();
-    }
+    };
     match &request.command {
         Some(HomeCommand::Go(input)) => {
             let template = settings_box::settings().unwrap_or_default().search_template;
             if let Some(url) = resolve_input(input, &template, &app::local_files()) {
-                tabs::navigate_active(&url);
+                tabs::navigate_active(win, &url);
             }
         }
-        Some(HomeCommand::Run(command)) => commands::run(*command),
+        Some(HomeCommand::Run(command)) => commands::run(win, *command),
         Some(HomeCommand::Padding(steps)) => settings_box::step(*steps),
         None => {}
     }

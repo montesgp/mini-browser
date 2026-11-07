@@ -1,0 +1,30 @@
+# mini-browser multiple windows and tab tear-off
+
+Let a tab leave its window for a window of its own and come back, like Chrome: one app process, several windows, the page moved live without reloading. Built in stages, each a verified PR.
+
+## Specs
+
+- **S1 — Tear a tab off into its own window.** User: "Ademas contemos con la posibilidad de extrar pestanias a nuevas ventanas de la app. Es decir tal como lo hace google-chrome que quedan (segun entiendo dos intancias) cada pestania abierta en su instancia de app dedicada." (Chrome keeps one process with several windows; the parent explained this.) A tab can move into a new window of the app; its page keeps running (no reload, state kept). The new window is a full mini-browser window (frame, top bar with its tabs, home page, settings, shortcuts).
+- **S2 — Bring it back.** User: "Ademas esa sesion o ventana (que es la pestania, deberia poder volver a incrustarse en la anterior que la origino. Como nueva pestania dentro de la topbar. Eso funciona asi en chrome no se si otros navegadores tambien creo que si". A tab in another window can move back into the window it came from (or any other window), appearing as a tab in that window's top bar.
+- **S3 — Stages (user chose "Plan completo por etapas (Recomendado)" — "1) reestructurar a varias ventanas, 2) comandos mover/devolver (todos los SO), 3) arrastrar fuera, 4) soltar en otra ventana (Windows). Una PR verificada por etapa; puede probar cada una.").**
+  1. Per-window state registry; no visible change; everything that works today keeps working.
+  2. Commands, all platforms: "Move tab to new window" and "Return tab to its window" (shortcut + home commands card rows).
+  3. Windows: dragging a tab out of the top bar (vertically past a threshold) opens it in a new window at the pointer.
+  4. Windows: dropping a dragged tab on another window's top bar moves it there at the drop position.
+- **S4 — Window rules.** Closing a window closes its tabs; closing the last tab of a secondary window closes that window; the app quits only when its last window closes (window close button, `Alt+F4`, `Ctrl/Cmd+Q` quits all windows). Keyboard shortcuts, the settings box, the address box and the home page act on their own window; settings changes apply to every window. Popups open in their opener's window. A second launch brings the last active window forward. The `mini://home` bridge accepts commands only from the active tab of its own window.
+- **S5 — Unchanged guarantees.** Sandbox, isolated profile, local-files and http(s) rules (AGENTS.md invariants 1–3) are untouched; macOS/Linux get the commands (stage 2), not the drag (stages 3–4).
+
+## Tasks
+
+- [x] T1 — S3.1, S4, S5: per-window registry refactor (no behavior change) — worker — commits: fb7ba86 (core registry + quit rule, 8 tests RED→GREEN), 56f4e08 (shell per-window state), advisory fix (drag regions/popups fallback)
+- [ ] T2 — S1, S2, S3.2: move/return commands (core `Tabs::take`/`insert_at` with tests) — worker — commit: —
+- [ ] T3 — S1, S3.3: drag a tab out into a new window (Windows) — worker — commit: —
+- [ ] T4 — S2, S3.4: drop a tab onto another window's bar (Windows) — worker — commit: —
+- [ ] T5 — each stage: independent verify, PR, ci-gate, merge — inline — merges: —
+
+## Log
+
+- L1 (user, original request): "Hagamos algo, en vez de tener un video tengamos una animacion html que muestre lo mismo que el video, como funciona el navegador, y de esa manera, voy a poder correr el html local dentro del mismo navegador para visualizar el animation. Ademas contemos con la posibilidad de extrar pestanias a nuevas ventanas de la app. Es decir tal como lo hace google-chrome que quedan (segun entiendo dos intancias) cada pestania  abierta en su instancia de app dedicada. Ademas esa sesion o ventana (que es la pestania, deberia poder volver a incrustarse en la anterior que la origino. Como nueva pestania dentro de la topbar. Eso funciona asi en chrome no se si otros navegadores tambien creo que si"
+- L2 (evidence, spike, discarded): on Windows a live Alloy BrowserView moved to a new frameless top-level window and back with the same browser id, no reload, a JS counter continuous (32 → 114 → 195), form text and scroll kept, 10–20 ms per move: `Panel::remove_child_view(View::from(&bv))`, `window_create_top_level`, in `on_window_created` `panel_create` + `add_child_view(bv)` + `show` + `request_focus`; back the same way. Gotcha: cef-rs's default `WindowDelegate::can_close` returns 0, so every window delegate must return 1 (or run its tab-closing sequence). Single-window singletons: FRAME, SHELL, BAR, STRIP/BUTTONS/SHOWN, ADDRESS_BOX, SETTINGS_BOX, LOADING_LINE/BAND_HEIGHT, the mouse hook's single window handle, client BROWSERS/CLOSING quit rules, POPUPS adoption, home bridge "active tab", relaunch target, keyboard commands. Estimate 1.2–1.6k lines over 4–5 PRs.
+- L3 (delivered alongside): the HTML demo is at D:\personal\projects\mini-browser\mini-browser-demo.html (source in demo-source\ next to it).
+- L4 (evidence, T1): worker regression on the real bundle with and without input (top bar hover, +, Ctrl+1/2/9, drag reorder, middle click, Ctrl+W on last tab, pin, settings +/-/outside click, home field, Alt+Left, maximize frame 8/0 px, WM_CLOSE). Independent verify: PASS, no behavior change with one window, no re-entrancy/borrow/close-order findings, sandbox/profile/file guards/home bridge unchanged; Ctrl+Q, window ×, Alt+F4 and the home Quit row each leave 0 processes; two low advisories (drag regions and popup adoption skipped for a browser with no window) fixed with an of_browser_or_last/last_active fallback. macOS/Linux not compiled locally (CI). Diff ~2.1k lines, mostly mechanical window-id plumbing; reviewed as one PR.

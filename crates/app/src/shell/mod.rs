@@ -1,5 +1,6 @@
-//! The browser shell: CEF startup, the top-level window with its padding frame, tabs, address
-//! box, top bar and settings box, keyboard shortcuts and the browser client. Startup is
+//! The browser shell: CEF startup, the registry of top-level windows, each with its padding
+//! frame, tabs, address box, top bar and settings box, keyboard shortcuts and the browser
+//! client. Startup is
 //! derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs),
 //! licensed Apache-2.0 OR MIT.
 
@@ -19,6 +20,7 @@ mod tab_strip;
 mod tabs;
 mod top_bar;
 mod window;
+mod windows;
 
 #[cfg(target_os = "macos")]
 pub type Library = library_loader::LibraryLoader;

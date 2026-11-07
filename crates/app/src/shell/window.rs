@@ -3,12 +3,13 @@
 //! (tabs and window buttons) and the address and settings boxes. Window and browser view
 //! delegates are derived from the cef-rs `cefsimple` example (https://github.com/tauri-apps/cef-rs), licensed Apache-2.0 OR MIT.
 
-use std::{cell::RefCell, path::PathBuf};
-
 use cef::{sys::cef_color_id_t, *};
-use mini_core::{layout, settings::Settings};
+use mini_core::layout;
 
-use super::{address_box, commands, loading_line, settings_box, tab_strip, tabs, top_bar};
+use super::{
+    address_box, commands, loading_line, settings_box, tab_strip, tabs, top_bar,
+    windows::{self, WindowId},
+};
 
 /// Near-black ARGB color behind the page: window, padding frame and the browser before paint.
 pub const BACKGROUND_COLOR: u32 = 0xFF11_1111;
@@ -30,7 +31,7 @@ const INITIAL_SIZE: Size = Size {
 };
 
 /// The window and the view inset by the padding frame.
-struct Frame {
+pub struct Frame {
     window: Window,
     content: View,
     /// The saved width of the frame.
@@ -39,22 +40,32 @@ struct Frame {
     inset: u32,
 }
 
-thread_local! {
-    static FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
+/// Runs `f` on the frame of window `win`; `None` before the window is created or once it is gone.
+fn with_frame<R>(win: WindowId, f: impl FnOnce(&mut Frame) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let mut frame = state.frame.borrow_mut();
+    frame.as_mut().map(f)
 }
 
-/// Opens the top-level window with one tab loading `url`, or the home page when `url` is
-/// `None`. `settings_path` is where the settings box saves changes.
-pub fn open(client: Client, settings: Settings, settings_path: PathBuf, url: Option<String>) {
+/// Opens a top-level window with one tab loading `url`, or the home page when `url` is `None`,
+/// with the current settings (`settings_box::settings`).
+pub fn open(client: Client, url: Option<String>) {
+    let win = windows::add();
     // The window shows itself once created.
-    let mut delegate = MiniWindowDelegate::new(client, settings, settings_path, url);
-    window_create_top_level(Some(&mut delegate));
+    let mut delegate = MiniWindowDelegate::new(win, client, url);
+    if window_create_top_level(Some(&mut delegate)).is_none() {
+        windows::remove(win);
+    }
 }
 
-/// Shows the window in front of the others, restored if it was minimized.
-pub fn bring_to_front() {
-    let Some(window) = FRAME.with_borrow(|frame| frame.as_ref().map(|frame| frame.window.clone()))
-    else {
+/// The top-level window `win`.
+pub fn window(win: WindowId) -> Option<Window> {
+    with_frame(win, |frame| frame.window.clone())
+}
+
+/// Shows window `win` in front of the others, restored if it was minimized.
+pub fn bring_to_front(win: WindowId) {
+    let Some(window) = window(win) else {
         return;
     };
     if window.is_minimized() == 1 {
@@ -65,15 +76,15 @@ pub fn bring_to_front() {
     window.bring_to_top();
 }
 
-/// The width the padding frame has now (none while the window is maximized).
-pub fn padding() -> u32 {
-    FRAME.with_borrow(|frame| frame.as_ref().map_or(0, |frame| frame.inset))
+/// The width the padding frame of window `win` has now (none while it is maximized).
+pub fn padding(win: WindowId) -> u32 {
+    with_frame(win, |frame| frame.inset).unwrap_or(0)
 }
 
 /// The bounds of the page area, inside the padding frame and below the pinned top bar, in
 /// window coordinates.
-pub fn page_area() -> Option<layout::Rect> {
-    let bounds = FRAME.with_borrow(|frame| frame.as_ref().map(|frame| frame.content.bounds()))?;
+pub fn page_area(win: WindowId) -> Option<layout::Rect> {
+    let bounds = with_frame(win, |frame| frame.content.bounds())?;
     Some(layout::Rect {
         x: bounds.x,
         y: bounds.y,
@@ -82,14 +93,10 @@ pub fn page_area() -> Option<layout::Rect> {
     })
 }
 
-/// Changes the saved width of the padding frame and lays the window out again.
-pub fn set_padding(padding: u32) {
-    FRAME.with_borrow_mut(|frame| {
-        if let Some(frame) = frame.as_mut() {
-            frame.padding = padding;
-        }
-    });
-    fit_frame();
+/// Changes the saved width of the padding frame of window `win` and lays it out again.
+pub fn set_padding(win: WindowId, padding: u32) {
+    with_frame(win, |frame| frame.padding = padding);
+    fit_frame(win);
 }
 
 /// Where the window's views start on the screen, in density-independent pixels. On Windows
@@ -137,8 +144,8 @@ pub fn overhang(window: &Window) -> i32 {
 
 /// Moves the tabs' pages down by `offset` pixels without resizing them, so they do not lay out
 /// and repaint again; the container cuts off their bottom. 0 puts them back.
-pub fn shift_pages(offset: i32) {
-    let Some(container) = FRAME.with_borrow(|frame| frame.as_ref()?.content.as_panel()) else {
+pub fn shift_pages(win: WindowId, offset: i32) {
+    let Some(container) = with_frame(win, |frame| frame.content.as_panel()).flatten() else {
         return;
     };
     container.set_to_box_layout(Some(&pages_layout(offset)));
@@ -162,9 +169,8 @@ fn pages_layout(offset: i32) -> BoxLayoutSettings {
 
 /// Gives the frame the width it has for the window's state: the saved one while the window is
 /// restored, none while it is maximized. Call it whenever the window's bounds change.
-fn fit_frame() {
-    let Some((window, mut content, inset)) = FRAME.with_borrow_mut(|frame| {
-        let frame = frame.as_mut()?;
+fn fit_frame(win: WindowId) {
+    let Some((window, mut content, inset)) = with_frame(win, |frame| {
         let maximized = frame.window.is_maximized() == 1;
         let overhang = if maximized {
             overhang(&frame.window)
@@ -177,21 +183,24 @@ fn fit_frame() {
         }
         frame.inset = inset;
         Some((frame.window.clone(), frame.content.clone(), inset))
-    }) else {
+    })
+    .flatten() else {
         return;
     };
-    loading_line::set_height(inset);
+    loading_line::set_height(win, inset);
     apply_layout(&window, &mut content, inset);
     window.layout();
-    update_drag_regions();
+    update_drag_regions(win);
 }
 
 wrap_task! {
-    struct FitFrame;
+    struct FitFrame {
+        win: WindowId,
+    }
 
     impl Task {
         fn execute(&self) {
-            fit_frame();
+            fit_frame(self.win);
         }
     }
 }
@@ -203,14 +212,11 @@ fn apply_layout(window: &Window, content: &mut View, padding: u32) {
     }
 }
 
-/// Makes the padding frame, and the shown top bar outside its tabs and buttons, drag the
-/// window. Call it whenever the window size, the padding or the top bar changes.
-pub fn update_drag_regions() {
-    let Some((window, padding)) = FRAME.with_borrow(|frame| {
-        frame
-            .as_ref()
-            .map(|frame| (frame.window.clone(), frame.inset))
-    }) else {
+/// Makes the padding frame, and the shown top bar outside its tabs and buttons, drag window
+/// `win`. Call it whenever the window size, the padding or the top bar changes.
+pub fn update_drag_regions(win: WindowId) {
+    let Some((window, padding)) = with_frame(win, |frame| (frame.window.clone(), frame.inset))
+    else {
         return;
     };
     let size = window.size();
@@ -218,7 +224,7 @@ pub fn update_drag_regions() {
     let mut regions: Vec<DraggableRegion> = frame
         .into_iter()
         .map(cef_rect)
-        .chain(top_bar::empty_area())
+        .chain(top_bar::empty_area(win))
         .map(|bounds| DraggableRegion {
             bounds,
             draggable: 1,
@@ -230,17 +236,19 @@ pub fn update_drag_regions() {
 
 /// Runs [`update_drag_regions`] once CEF has finished its current work. CEF updates the window's
 /// draggable regions from the page as it loads, which can cover the top of the frame.
-pub fn update_drag_regions_later() {
-    let mut task = UpdateDragRegions::new();
+pub fn update_drag_regions_later(win: WindowId) {
+    let mut task = UpdateDragRegions::new(win);
     post_task(ThreadId::UI, Some(&mut task));
 }
 
 wrap_task! {
-    struct UpdateDragRegions;
+    struct UpdateDragRegions {
+        win: WindowId,
+    }
 
     impl Task {
         fn execute(&self) {
-            update_drag_regions();
+            update_drag_regions(self.win);
         }
     }
 }
@@ -325,11 +333,11 @@ const THEME_COLORS: [(cef_color_id_t, u32); 8] = [
     ),
 ];
 
+// `win` is the window's entry in the registry.
 wrap_window_delegate! {
     struct MiniWindowDelegate {
+        win: WindowId,
         client: Client,
-        settings: Settings,
-        settings_path: PathBuf,
         url: Option<String>,
     }
 
@@ -347,11 +355,11 @@ wrap_window_delegate! {
         }
 
         fn on_layout_changed(&self, _view: Option<&mut View>, _new_bounds: Option<&Rect>) {
-            address_box::reposition();
-            settings_box::reposition();
-            top_bar::reposition();
-            tab_strip::fit();
-            update_drag_regions();
+            address_box::reposition(self.win);
+            settings_box::reposition(self.win);
+            top_bar::reposition(self.win);
+            tab_strip::fit(self.win);
+            update_drag_regions(self.win);
         }
     }
 
@@ -361,14 +369,17 @@ wrap_window_delegate! {
         fn on_window_bounds_changed(&self, _window: Option<&mut Window>, _new_bounds: Option<&Rect>) {
             // Maximizing or restoring the window hides or shows the frame; lay the window out
             // once CEF is done with the bounds change.
-            let mut task = FitFrame::new();
+            let mut task = FitFrame::new(self.win);
             post_task(ThreadId::UI, Some(&mut task));
         }
 
         fn on_window_created(&self, window: Option<&mut Window>) {
-            let Some(window) = window else {
+            let (Some(window), Some(state), Some(settings)) =
+                (window, windows::get(self.win), settings_box::settings())
+            else {
                 return;
             };
+            let win = self.win;
             let Some(container) = panel_create(Some(&mut DarkPanelDelegate::new(BACKGROUND_COLOR, 0)))
             else {
                 return;
@@ -383,54 +394,55 @@ wrap_window_delegate! {
                 window.set_window_app_icon(Some(&mut icon));
             }
             window.set_background_color(BACKGROUND_COLOR);
-            if let Some(band) = loading_line::create(self.settings.padding) {
+            if let Some(band) = loading_line::create(win, settings.padding) {
                 window.add_child_view(Some(&mut View::from(&band)));
             }
             // The bar is the first overlay, so the others stay above it; its spacer holds the
             // page below the pinned bar.
-            if let Some(spacer) = top_bar::create(window, self.settings.top_bar) {
+            if let Some(spacer) = top_bar::create(win, window, settings.top_bar) {
                 window.add_child_view(Some(&mut View::from(&spacer)));
             }
             let mut container_view = View::from(&container);
             window.add_child_view(Some(&mut container_view));
-            apply_layout(window, &mut container_view, self.settings.padding);
-            FRAME.set(Some(Frame {
+            apply_layout(window, &mut container_view, settings.padding);
+            state.frame.replace(Some(Frame {
                 window: window.clone(),
                 content: container_view,
-                padding: self.settings.padding,
-                inset: self.settings.padding,
+                padding: settings.padding,
+                inset: settings.padding,
             }));
             // Added last so they stay above the other views.
-            address_box::create(window, &self.settings.search_template);
-            settings_box::create(window, self.settings.clone(), self.settings_path.clone());
+            address_box::create(win, window, &settings.search_template);
+            settings_box::create(win, window);
 
-            tabs::attach(window.clone(), container, self.client.clone());
+            tabs::attach(win, window.clone(), container, self.client.clone());
             // Views reports no middle clicks or drags; on Windows a hook on this thread does.
             #[cfg(target_os = "windows")]
-            super::mouse_hook::install(window);
+            super::mouse_hook::install(win, window);
             window.center_window(Some(&INITIAL_SIZE));
             window.show();
-            tabs::open_tab(self.url.as_deref());
+            tabs::open_tab(win, self.url.as_deref());
         }
 
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
             #[cfg(target_os = "windows")]
-            super::mouse_hook::uninstall();
-            tabs::detach();
-            address_box::destroy();
-            settings_box::destroy();
-            top_bar::destroy();
-            tab_strip::destroy();
-            loading_line::destroy();
-            FRAME.take();
+            super::mouse_hook::uninstall(self.win);
+            // The window's state (tabs, bar, boxes, frame) goes with its entry.
+            windows::remove(self.win);
+        }
+
+        fn on_window_activation_changed(&self, _window: Option<&mut Window>, active: i32) {
+            if active == 1 {
+                windows::activate(self.win);
+            }
         }
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
             // Allow the window to close once every tab's browser says it's OK. Ask all of them,
             // so each one starts closing; the last one closes the window instead of returning
             // home.
-            tabs::start_quitting();
-            let ready = tabs::browsers().iter().fold(true, |ready, browser| {
+            tabs::start_quitting(self.win);
+            let ready = tabs::browsers(self.win).iter().fold(true, |ready, browser| {
                 let closed = browser.host().is_none_or(|host| host.try_close_browser() == 1);
                 ready && closed
             });
@@ -438,9 +450,9 @@ wrap_window_delegate! {
         }
 
         fn on_key_event(&self, _window: Option<&mut Window>, event: Option<&KeyEvent>) -> i32 {
-            (settings_box::handle_escape(event)
-                || settings_box::handle_step_keys(event)
-                || commands::handle_event(event))
+            (settings_box::handle_escape(self.win, event)
+                || settings_box::handle_step_keys(self.win, event)
+                || commands::handle_event(self.win, event))
                 .into()
         }
 
@@ -530,15 +542,19 @@ wrap_browser_view_delegate! {
 
         fn on_popup_browser_view_created(
             &self,
-            _browser_view: Option<&mut BrowserView>,
+            browser_view: Option<&mut BrowserView>,
             popup_browser_view: Option<&mut BrowserView>,
             is_devtools: i32,
         ) -> i32 {
-            // Pages' popups (`window.open`, `target=_blank`) become tabs of this window;
-            // DevTools keeps its default window.
-            match popup_browser_view {
-                Some(popup) if is_devtools == 0 => {
-                    tabs::adopt_popup(popup.clone());
+            // Pages' popups (`window.open`, `target=_blank`) become tabs of their opener's
+            // window; DevTools keeps its default window.
+            let opener = browser_view
+                .and_then(|view| view.browser())
+                .and_then(|browser| windows::of_browser_or_last(&browser))
+                .or_else(windows::last_active);
+            match (popup_browser_view, opener) {
+                (Some(popup), Some(win)) if is_devtools == 0 => {
+                    tabs::adopt_popup(win, popup.clone());
                     1
                 }
                 _ => 0,

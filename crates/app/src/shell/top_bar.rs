@@ -6,10 +6,10 @@
 //! down by that height without resizing (its bottom is cut off while the bar shows), so the page
 //! does not lay out and repaint again each time the bar comes and goes. Hidden, nothing of it
 //! shows.
-//! A timer checks the pointer, because Views reports no pointer moves over the page. The rules
-//! live in `mini_core::top_bar`.
+//! A timer per window checks the pointer, because Views reports no pointer moves over the page.
+//! The rules live in `mini_core::top_bar`.
 
-use std::{cell::RefCell, time::Instant};
+use std::time::Instant;
 
 use cef::*;
 use mini_core::{
@@ -22,6 +22,7 @@ use super::{
     tab_strip::{self, STRIP_COLOR, STRIP_HEIGHT},
     tabs,
     window::{self, DarkPanelDelegate},
+    windows::{self, WindowId},
 };
 
 const BUTTON_WIDTH: i32 = 40;
@@ -75,7 +76,7 @@ enum Action {
     Close,
 }
 
-struct Bar {
+pub struct Bar {
     window: Window,
     controller: OverlayController,
     /// Holds the page below the pinned bar.
@@ -88,14 +89,24 @@ struct Bar {
     started: bool,
 }
 
-thread_local! {
-    static BAR: RefCell<Option<Bar>> = const { RefCell::new(None) };
+/// Reads the bar of window `win` with `f`; `None` before it is created or once it is gone.
+fn with_bar<R>(win: WindowId, f: impl FnOnce(&Bar) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let bar = state.bar.borrow();
+    bar.as_ref().map(f)
 }
 
-/// Creates the bar as an overlay of `window` in `mode` and returns the spacer, the panel that
-/// keeps the page below the shown bar; add it to the window's layout below the frame's top
-/// side. Call it before the other overlays, so they stay above the bar.
-pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
+/// Changes the bar of window `win` with `f`.
+fn with_bar_mut<R>(win: WindowId, f: impl FnOnce(&mut Bar) -> R) -> Option<R> {
+    let state = windows::get(win)?;
+    let mut bar = state.bar.borrow_mut();
+    bar.as_mut().map(f)
+}
+
+/// Creates the bar as an overlay of `window` (window `win`) in `mode` and returns the spacer,
+/// the panel that keeps the page below the shown bar; add it to the window's layout below the
+/// frame's top side. Call it before the other overlays, so they stay above the bar.
+pub fn create(win: WindowId, window: &Window, mode: TopBarMode) -> Option<Panel> {
     let spacer = panel_create(Some(&mut DarkPanelDelegate::new(STRIP_COLOR, STRIP_HEIGHT)))?;
     let panel = panel_create(Some(&mut DarkPanelDelegate::new(STRIP_COLOR, STRIP_HEIGHT)))?;
     let layout = panel.set_to_box_layout(Some(&BoxLayoutSettings {
@@ -103,9 +114,9 @@ pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
         cross_axis_alignment: AxisAlignment::STRETCH,
         ..Default::default()
     }))?;
-    let mut strip = View::from(&tab_strip::create()?);
-    let pin = window_button(Action::Pin)?;
-    let buttons = buttons_panel()?;
+    let mut strip = View::from(&tab_strip::create(win)?);
+    let pin = window_button(win, Action::Pin)?;
+    let buttons = buttons_panel(win)?;
     let maximize = buttons.1;
     let mut buttons = View::from(&buttons.0);
     // The pin follows the strip: before the window buttons on the right, or at the end.
@@ -122,7 +133,7 @@ pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
 
     let controller =
         window.add_overlay_view(Some(&mut View::from(&panel)), DockingMode::CUSTOM, 0)?;
-    BAR.set(Some(Bar {
+    windows::get(win)?.bar.replace(Some(Bar {
         window: window.clone(),
         controller,
         spacer: spacer.clone(),
@@ -132,17 +143,13 @@ pub fn create(window: &Window, mode: TopBarMode) -> Option<Panel> {
         state: TopBar::default(),
         started: false,
     }));
-    apply_mode();
-    poll();
+    apply_mode(win);
+    poll(win);
     Some(spacer)
 }
 
-pub fn destroy() {
-    BAR.take();
-}
-
 /// The window buttons in platform order, and the maximize/restore button.
-fn buttons_panel() -> Option<(Panel, LabelButton)> {
+fn buttons_panel(win: WindowId) -> Option<(Panel, LabelButton)> {
     // No fixed height: the panel takes its buttons' size.
     let panel = panel_create(Some(&mut DarkPanelDelegate::new(STRIP_COLOR, 0)))?;
     panel.set_to_box_layout(Some(&BoxLayoutSettings {
@@ -157,7 +164,7 @@ fn buttons_panel() -> Option<(Panel, LabelButton)> {
     };
     let mut maximize = None;
     for action in order {
-        let button = window_button(action)?;
+        let button = window_button(win, action)?;
         panel.add_child_view(Some(&mut View::from(&button)));
         if action == Action::Maximize {
             maximize = Some(button);
@@ -166,7 +173,7 @@ fn buttons_panel() -> Option<(Panel, LabelButton)> {
     Some((panel, maximize?))
 }
 
-fn window_button(action: Action) -> Option<LabelButton> {
+fn window_button(win: WindowId, action: Action) -> Option<LabelButton> {
     let (glyph, name) = match action {
         Action::Pin => (PIN_GLYPH, "Pin top bar"),
         Action::Minimize => (MINIMIZE_GLYPH, "Minimize"),
@@ -174,7 +181,7 @@ fn window_button(action: Action) -> Option<LabelButton> {
         Action::Close => (CLOSE_GLYPH, "Close"),
     };
     let button = label_button_create(
-        Some(&mut WindowButtonDelegate::new(action)),
+        Some(&mut WindowButtonDelegate::new(win, action)),
         Some(&CefString::from(glyph)),
     )?;
     let font = if action == Action::Pin {
@@ -208,21 +215,16 @@ fn set_name(button: &LabelButton, name: &str) {
     button.set_accessible_name(Some(&CefString::from(name)));
 }
 
-/// Switches to `mode`: pinned shows the bar; auto hides it unless the pointer is over it.
-pub fn set_mode(mode: TopBarMode) {
-    BAR.with_borrow_mut(|bar| {
-        if let Some(bar) = bar.as_mut() {
-            bar.mode = mode;
-        }
-    });
-    apply_mode();
+/// Switches the bar of window `win` to `mode`: pinned shows the bar; auto hides it unless the
+/// pointer is over it.
+pub fn set_mode(win: WindowId, mode: TopBarMode) {
+    with_bar_mut(win, |bar| bar.mode = mode);
+    apply_mode(win);
 }
 
 /// Shows the mode on the pin button, and the bar for the mode.
-fn apply_mode() {
-    let Some((pin, mode)) =
-        BAR.with_borrow(|bar| bar.as_ref().map(|bar| (bar.pin.clone(), bar.mode)))
-    else {
+fn apply_mode(win: WindowId) {
+    let Some((pin, mode)) = with_bar(win, |bar| (bar.pin.clone(), bar.mode)) else {
         return;
     };
     let (color, name) = match mode {
@@ -231,53 +233,45 @@ fn apply_mode() {
     };
     pin.set_enabled_text_colors(color);
     set_name(&pin, name);
-    update();
+    update(win);
 }
 
-/// Shows the bar for a moment in auto mode; call it when the tabs or the active tab change.
-/// The first tab, when the window opens, does not flash it.
-pub fn tabs_changed() {
-    let flashed = BAR.with_borrow_mut(|bar| {
-        let bar = bar.as_mut()?;
+/// Shows the bar of window `win` for a moment in auto mode; call it when its tabs or its active
+/// tab change. The first tab, when the window opens, does not flash it.
+pub fn tabs_changed(win: WindowId) {
+    let flashed = with_bar_mut(win, |bar| {
         if bar.started {
             bar.state.flash(Instant::now());
         }
         bar.started = true;
-        Some(())
     });
     if flashed.is_some() {
-        update();
+        update(win);
     }
 }
 
-/// Hides the auto-mode bar at once; call it after the user chose a tab in it.
-pub fn tab_chosen() {
-    let dismissed = BAR.with_borrow_mut(|bar| {
-        let bar = bar.as_mut()?;
-        bar.state.dismiss(bar.mode);
-        Some(())
-    });
+/// Hides the auto-mode bar of window `win` at once; call it after the user chose a tab in it.
+pub fn tab_chosen(win: WindowId) {
+    let dismissed = with_bar_mut(win, |bar| bar.state.dismiss(bar.mode));
     if dismissed.is_some() {
-        update();
+        update(win);
     }
 }
 
 /// Places the bar below the frame's top side, inset by the frame, and shows the window's
-/// state on the maximize button. Call it whenever the window is laid out.
-pub fn reposition() {
-    let Some((window, controller, maximize)) = BAR.with_borrow(|bar| {
-        bar.as_ref().map(|bar| {
-            (
-                bar.window.clone(),
-                bar.controller.clone(),
-                bar.maximize.clone(),
-            )
-        })
+/// state on the maximize button. Call it whenever window `win` is laid out.
+pub fn reposition(win: WindowId) {
+    let Some((window, controller, maximize)) = with_bar(win, |bar| {
+        (
+            bar.window.clone(),
+            bar.controller.clone(),
+            bar.maximize.clone(),
+        )
     }) else {
         return;
     };
     let size = window.size();
-    let padding = i32::try_from(window::padding()).unwrap_or(0);
+    let padding = i32::try_from(window::padding(win)).unwrap_or(0);
     controller.set_bounds(Some(&Rect {
         x: padding,
         y: padding,
@@ -297,15 +291,15 @@ pub fn reposition() {
 
 /// The part of the shown bar right of the tab labels, the `+` button and the +N count, up to
 /// the pin, in window coordinates: it drags the window.
-pub fn empty_area() -> Option<Rect> {
-    let controller = BAR.with_borrow(|bar| bar.as_ref().map(|bar| bar.controller.clone()))?;
+pub fn empty_area(win: WindowId) -> Option<Rect> {
+    let controller = with_bar(win, |bar| bar.controller.clone())?;
     if controller.is_visible() == 0 {
         return None;
     }
     // The strip's bounds are relative to the bar, which takes the overlay's bounds.
     let bar = controller.bounds();
-    let strip = tab_strip::panel()?.bounds();
-    let labels_end = tab_strip::labels_end();
+    let strip = tab_strip::panel(win)?.bounds();
+    let labels_end = tab_strip::labels_end(win);
     Some(Rect {
         x: bar.x + strip.x + labels_end,
         y: bar.y,
@@ -316,34 +310,32 @@ pub fn empty_area() -> Option<Rect> {
 
 /// The shown bar's bounds in window coordinates; `None` while it is hidden.
 #[cfg(target_os = "windows")]
-pub fn shown_bounds() -> Option<Rect> {
-    let controller = BAR.with_borrow(|bar| bar.as_ref().map(|bar| bar.controller.clone()))?;
+pub fn shown_bounds(win: WindowId) -> Option<Rect> {
+    let controller = with_bar(win, |bar| bar.controller.clone())?;
     (controller.is_visible() == 1).then(|| controller.bounds())
 }
 
 /// `point` (window coordinates) in the tab strip's coordinates, while the bar is shown.
 #[cfg(target_os = "windows")]
-pub fn strip_point(point: (i32, i32)) -> Option<(i32, i32)> {
-    let bar = shown_bounds()?;
-    let strip = tab_strip::panel()?.bounds();
+pub fn strip_point(win: WindowId, point: (i32, i32)) -> Option<(i32, i32)> {
+    let bar = shown_bounds(win)?;
+    let strip = tab_strip::panel(win)?.bounds();
     Some((point.0 - bar.x - strip.x, point.1 - bar.y - strip.y))
 }
 
-/// Shows or hides the bar for the pointer's place and the time.
-fn update() {
-    let Some((window, controller, spacer, mode, padding)) = BAR.with_borrow(|bar| {
-        bar.as_ref().map(|bar| {
-            (
-                bar.window.clone(),
-                bar.controller.clone(),
-                bar.spacer.clone(),
-                bar.mode,
-                window::padding(),
-            )
-        })
+/// Shows or hides the bar of window `win` for the pointer's place and the time.
+fn update(win: WindowId) {
+    let Some((window, controller, spacer, mode)) = with_bar(win, |bar| {
+        (
+            bar.window.clone(),
+            bar.controller.clone(),
+            bar.spacer.clone(),
+            bar.mode,
+        )
     }) else {
         return;
     };
+    let padding = window::padding(win);
     let size = window.size();
     let point = (window.is_minimized() == 0)
         .then(|| pointer_in(&window))
@@ -357,10 +349,8 @@ fn update() {
         i32::try_from(padding).unwrap_or(0),
         STRIP_HEIGHT,
     );
-    let Some(visible) = BAR.with_borrow_mut(|bar| {
-        bar.as_mut()
-            .map(|bar| bar.state.update(mode, pointer, Instant::now()))
-    }) else {
+    let Some(visible) = with_bar_mut(win, |bar| bar.state.update(mode, pointer, Instant::now()))
+    else {
         return;
     };
     let state = i32::from(visible);
@@ -371,30 +361,32 @@ fn update() {
         // the auto-mode bar moves it down without resizing it, which would make it repaint.
         spacer.set_visible(pushed);
         window.layout();
-        window::shift_pages(if room == Room::Shift { STRIP_HEIGHT } else { 0 });
+        window::shift_pages(win, if room == Room::Shift { STRIP_HEIGHT } else { 0 });
         if visible {
-            reposition();
-            tab_strip::fit();
+            reposition(win);
+            tab_strip::fit(win);
         }
         controller.set_visible(state);
-        window::update_drag_regions();
+        window::update_drag_regions(win);
     }
 }
 
-/// Checks the pointer every [`POLL_MS`] while the window exists.
-fn poll() {
-    let mut task = Poll::new();
+/// Checks the pointer over window `win` every [`POLL_MS`] while the window exists.
+fn poll(win: WindowId) {
+    let mut task = Poll::new(win);
     post_delayed_task(ThreadId::UI, Some(&mut task), POLL_MS);
 }
 
 wrap_task! {
-    struct Poll;
+    struct Poll {
+        win: WindowId,
+    }
 
     impl Task {
         fn execute(&self) {
-            if BAR.with_borrow(Option::is_some) {
-                update();
-                poll();
+            if with_bar(self.win, |_| ()).is_some() {
+                update(self.win);
+                poll(self.win);
             }
         }
     }
@@ -455,8 +447,8 @@ fn pointer_on_screen(_window: &Window) -> Option<Point> {
     None
 }
 
-fn run(action: Action) {
-    let Some(window) = BAR.with_borrow(|bar| bar.as_ref().map(|bar| bar.window.clone())) else {
+fn run(win: WindowId, action: Action) {
+    let Some(window) = with_bar(win, |bar| bar.window.clone()) else {
         return;
     };
     match action {
@@ -464,12 +456,13 @@ fn run(action: Action) {
         Action::Minimize => window.minimize(),
         Action::Maximize if window.is_maximized() == 1 => window.restore(),
         Action::Maximize => window.maximize(),
-        Action::Close => tabs::quit(),
+        Action::Close => tabs::quit(win),
     }
 }
 
 wrap_button_delegate! {
     struct WindowButtonDelegate {
+        win: WindowId,
         action: Action,
     }
 
@@ -485,7 +478,7 @@ wrap_button_delegate! {
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
             // Closing or minimizing destroys or hides this button: do it after the press.
-            let mut task = RunAction::new(self.action);
+            let mut task = RunAction::new(self.win, self.action);
             post_task(ThreadId::UI, Some(&mut task));
         }
 
@@ -507,12 +500,13 @@ wrap_button_delegate! {
 
 wrap_task! {
     struct RunAction {
+        win: WindowId,
         action: Action,
     }
 
     impl Task {
         fn execute(&self) {
-            run(self.action);
+            run(self.win, self.action);
         }
     }
 }
