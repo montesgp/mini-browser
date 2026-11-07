@@ -53,6 +53,16 @@
       { keys: 'Ctrl+Shift+Tab', label: 'Previous tab', press: () => run('previous-tab') },
       { keys: `${primary}+1…8`, label: 'Go to that tab' },
       { keys: `${primary}+9`, label: 'Last tab', press: () => run('last-tab') },
+      {
+        keys: `${primary}+Shift+N`,
+        label: 'Move tab to new window',
+        press: () => run('move-to-new-window'),
+      },
+      {
+        keys: `${primary}+Shift+M`,
+        label: 'Return tab to its window',
+        press: () => run('return-tab'),
+      },
       { keys: mac ? 'Cmd+[' : 'Alt+Left', label: 'Back', press: () => run('back') },
       { keys: mac ? 'Cmd+]' : 'Alt+Right', label: 'Forward', press: () => run('forward') },
       { keys: `${primary}+R`, label: 'Reload', press: () => run('reload') },

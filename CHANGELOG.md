@@ -7,6 +7,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 ### Added
 
 - Open files from your computer: type a path (`C:\Users\you\page.html`, `C:/…`, `/home/you/page.html` or `~/page.html`) or a `file:///` address in the home page's field or the `Ctrl/Cmd+L` box, pass it with `--url`, or drop a file on the window to open it in the current tab. Names with spaces, `#` or accents work. Files on other computers (`\\server\share\…`, `file://host/…`) are never opened and become a search, and websites still cannot open your files.
+- Move a tab to a new window with `Ctrl+Shift+N` (`Cmd+Shift+N` on Mac) or the home page's "Move tab to new window" row, and back with `Ctrl+Shift+M` (`Cmd+Shift+M`) or "Return tab to its window", as in Chrome: the page keeps running without reloading. The new window opens next to the old one with its own tabs, top bar, address box and settings box; a window's only tab stays put. A returned tab goes after the current tab of the window it came from (or the window you used last), and a window left without tabs closes.
+- With several windows, closing a window (its close button or `Alt+F4`) closes only its tabs, `Ctrl+W` on the last tab of an extra window closes that window, and `Ctrl/Cmd+Q` or the home page's quit row closes every window. Settings changes apply to every window, pop-ups open in their page's window and starting the app again brings the window you used last to the front.
 
 ## [0.3.0] - 2026-11-05
 

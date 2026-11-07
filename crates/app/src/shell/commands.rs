@@ -68,9 +68,11 @@ pub fn run(win: WindowId, command: Command) {
         Command::Back => tabs::with_active_browser(win, |browser| browser.go_back()),
         Command::Forward => tabs::with_active_browser(win, |browser| browser.go_forward()),
         Command::Reload => tabs::with_active_browser(win, |browser| browser.reload()),
-        Command::Quit => tabs::quit(win),
+        Command::Quit => tabs::quit_all(),
         Command::OpenSettings => settings_box::toggle(win),
         Command::GoToTab(position) => tabs::activate_position(win, position),
         Command::GoToLastTab => tabs::activate_last(win),
+        Command::MoveTabToNewWindow => tabs::move_to_new_window(win),
+        Command::ReturnTab => tabs::return_tab(win),
     }
 }

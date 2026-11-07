@@ -33,6 +33,10 @@ pub struct WindowState {
     /// Popups opened recently in the window. One shared budget (unit key) rather than one per
     /// opener, so a popup that opens another popup cannot reset the count.
     pub popups: RefCell<PopupThrottle<()>>,
+    /// The window this one was opened from by moving a tab into it; its tabs return there.
+    pub origin: Cell<Option<WindowId>>,
+    /// The tab moving into the window and where the window opens, until the window is created.
+    pub incoming: RefCell<Option<window::Incoming>>,
     #[cfg(target_os = "windows")]
     pub mouse: mouse_hook::WindowMouse,
 }
@@ -83,6 +87,14 @@ pub fn activate(win: WindowId) {
 /// The window the user activated last (else the newest one).
 pub fn last_active() -> Option<WindowId> {
     REGISTRY.with_borrow(|registry| registry.windows.last_active())
+}
+
+/// The window a tab of window `win` returns to (see `Windows::return_target`).
+pub fn return_target(win: WindowId) -> Option<WindowId> {
+    REGISTRY.with_borrow(|registry| {
+        let origin = registry.windows.get(win)?.origin.get();
+        registry.windows.return_target(win, origin)
+    })
 }
 
 /// The first window whose state matches `predicate`. The predicate runs outside the registry
