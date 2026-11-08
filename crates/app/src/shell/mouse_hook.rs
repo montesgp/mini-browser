@@ -538,7 +538,10 @@ fn watch() {
 
 fn watch_later() {
     let mut task = Watch::new();
-    post_delayed_task(ThreadId::UI, Some(&mut task), FOLLOW_MS);
+    if post_delayed_task(ThreadId::UI, Some(&mut task), FOLLOW_MS) == 0 {
+        // The task did not post (the app is shutting down): the next drag starts a new watch.
+        WATCHING.set(false);
+    }
 }
 
 wrap_task! {
@@ -555,6 +558,10 @@ wrap_task! {
 /// place, a tab dragged out of its window goes back into it at its place (a window left without
 /// tabs closes), and a window moved by its only tab goes back where it was.
 fn cancel(session: Session) {
+    let dragged = match gesture(session.current) {
+        Gesture::Dragging { tab, .. } => Some(tab),
+        _ => None,
+    };
     end_session();
     set_gesture(session.current, Gesture::None);
     let source_open = tabs::keeps_running(session.start.window);
@@ -565,7 +572,7 @@ fn cancel(session: Session) {
             }
         }
         CancelDrag::Reorder { window, index } => {
-            if let Some(tab) = tabs::active(window) {
+            if let Some(tab) = dragged.or_else(|| tabs::active(window)) {
                 tabs::move_tab(window, tab, index);
             }
         }
@@ -638,13 +645,32 @@ fn snap(window: &Window, win: WindowId, screen: &Point) {
     let Some(display) = display_get_nearest_point(Some(screen), 0) else {
         return;
     };
-    let target = layout::snap_target((screen.x, screen.y), window::core_rect(&display.bounds()));
-    match target {
-        Some(Snap::Maximize) => maximize(win),
+    let bounds = window::core_rect(&display.bounds());
+    let work_area = window::core_rect(&display.work_area());
+    let mut displays = vec![None; display_get_count()];
+    display_get_alls(Some(&mut displays));
+    let other: Vec<layout::Rect> = displays
+        .iter()
+        .flatten()
+        .map(|display| window::core_rect(&display.bounds()))
+        .filter(|other| *other != bounds)
+        .collect();
+    match layout::snap_target_among((screen.x, screen.y), bounds, &other) {
+        Some(Snap::Maximize) => {
+            // Windows maximizes a window on the screen it overlaps most, so it first moves onto
+            // the screen under the pointer.
+            let size = window.bounds_in_screen();
+            window.set_bounds(Some(&window::cef_rect(layout::Rect {
+                x: work_area.x,
+                y: work_area.y,
+                width: size.width.min(work_area.width),
+                height: size.height.min(work_area.height),
+            })));
+            maximize(win);
+        }
         Some(half) => {
-            if let Some(bounds) = layout::snap_bounds(half, window::core_rect(&display.work_area()))
-            {
-                window.set_bounds(Some(&window::cef_rect(bounds)));
+            if let Some(half) = layout::snap_bounds(half, work_area) {
+                window.set_bounds(Some(&window::cef_rect(half)));
             }
         }
         None => {}
