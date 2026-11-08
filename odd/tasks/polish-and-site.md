@@ -15,11 +15,12 @@ Owner decisions (2026-11-07): improvements ship as v0.4.1; site on GitHub Pages;
 
 ## Tasks
 
-- [ ] T1 — S1, S2, S3, S4: drag and settings polish (core rules with tests: snap target, cancel restore) — worker — commit: —
-- [ ] T2 — S5: release v0.4.1 — parent — commit: —
+- [x] T1 — S1, S2, S3, S4: drag and settings polish (core rules with tests: snap target, cancel restore) — worker — commits: d10caa1, 4d43f3b, outer-edge and dragged-tab fixes
 - [ ] T3 — S6: GitHub Pages site + versionless release assets — worker — commit: —
+- [ ] T2 — S5: release v0.4.1 (after T3, so the release carries the versionless assets the site links to) — parent — commit: —
 
 ## Log
 
 - L1 (owner, 2026-11-07, verbatim): "Bueno inclui las mejoras y promovamos y distribuyamos. La parte de sighnpath sabes cuanto suelen tardar desde Microsoft por esto? Porque aun no recibi nada"
 - L2 (owner answers): distribution: "Con distribuir me referia a como veniamos con github releases, pero puede ser una buena opcion usar scoop winget y demas, pero deberiamos cubrir todas las plataformas si hacemos para una. Sino, de que manera podemos tener tipo un github pages que muestre identidad visual del navegador y una opcion de download para las 3 plataformas que descargue el zip de release? Como lo ves a eso? Podria ser mas simple para los usuarios no tan tecnicos? Como esta haciendo el mundo con este tipo de productos lanzados"; promotion: "Nada de promoción por ahora"; version: "v0.4.1 (Recomendado)"; site: "Sí, hacer la página".
+- L3 (evidence, T1): worker functional check passed (Esc in reorder, tear-off and window move; snaps; S3 root cause: the release ending a drag counted as a tab click, which hid the Auto bar; × 0xB4 at rest). Independent verify: S1-S4, S7 met. Advisories fixed: shared screen edges no longer snap (`layout::snap_target_among`, test with the owner's layout, RED then GREEN), top-edge maximize lands on the pointer's screen, Esc reorder moves the dragged tab, watch restarts if its task fails to post. Runtime spot check on the owner's screens: all pass. Order change: T3 before T2.
