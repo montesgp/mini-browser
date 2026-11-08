@@ -8,7 +8,7 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - The owner, [@montesgp](https://github.com/montesgp), reviews and merges every external contribution. Nobody else has write access.
 - Everyone else contributes through **issues** and **pull requests from a fork**.
-- `main` is protected: changes land only through pull requests whose `ci-gate` check is green.
+- Work goes into `dev`; `main` holds released code and is what GitHub Pages and releases come from. Both branches are protected: changes land only through pull requests whose `ci-gate` check is green.
 - Workflows from forks run after the owner approves them, so your first CI run may wait for a moment.
 
 ## Reporting a bug or asking for a feature
@@ -22,7 +22,7 @@ Feature requests that add browser "chrome" (toolbars, menus, always-visible UI) 
 ## Sending a pull request
 
 1. For anything bigger than a small fix, open an issue first so we can agree on the approach.
-2. Fork the repository and create a branch from `main` (for example `fix/tab-strip-height`).
+2. Fork the repository and create a branch from `dev` (for example `fix/tab-strip-height`).
 3. Make your change, with tests where the logic allows it (see below), and update the docs it affects (`README.md`, `CHANGELOG.md` under `Unreleased`).
 4. Run the checks locally:
 
@@ -33,8 +33,13 @@ Feature requests that add browser "chrome" (toolbars, menus, always-visible UI) 
    cargo test -p minibrowser --lib
    ```
 
-5. Open a pull request against `main` and fill in the template. Keep it focused: one change per PR, ideally under about 400 changed lines.
+5. Open a pull request against `dev` and fill in the template. Keep it focused: one change per PR, ideally under about 400 changed lines.
 6. The owner reviews it. Address the feedback with new commits; the owner merges once it is approved and `ci-gate` is green.
+7. When `dev` is ready to ship, the owner promotes it to `main` with a pull request from `dev`.
+
+```
+feature branch ──► dev ──► main (GitHub Pages, tagged vX.Y.Z)
+```
 
 Build prerequisites and commands are in the README's [For agents and contributors](README.md#for-agents-and-contributors) part.
 
