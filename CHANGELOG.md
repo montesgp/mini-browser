@@ -8,6 +8,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 - On Windows, `Esc` cancels a tab drag, as in Chrome: a tab dragged along the bar goes back to its place, a tab dragged out into a new window goes back into its window at its place (the new window closes), and a window moved by its only tab goes back where it was. Nothing reloads.
 - On Windows, a window you move by its tab snaps like any other window: let go with the mouse at the left or right edge of a screen and it fills that half, at the top edge it maximizes.
+- A download page at <https://montesgp.github.io/mini-browser/>: one button for your system, links for the others, the animated tour and first-launch help. It always offers the latest release.
+- Each release also carries versionless copies of its archives (`mini-browser-windows-x64.zip`, `mini-browser-macos-arm64.zip`, `mini-browser-linux-x64.tar.gz`), listed in `SHA256SUMS.txt` and attested, so `releases/latest/download/<name>` always gets the latest version.
 
 ### Changed
 

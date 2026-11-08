@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>mini-browser — quick tour</title>
+<style>
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --views: "Segoe UI", Helvetica, Arial, sans-serif;
+  --symbol: "Segoe UI Symbol", "Segoe UI", Helvetica, Arial, sans-serif;
+  --accent: #5b8def;
+}
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+#stage {
+  position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+  transform-origin: 0 0; overflow: hidden; background: #111111; cursor: none;
+  color: #e6e6e6; font: 14px/1.4 var(--sans);
+  -webkit-font-smoothing: antialiased; user-select: none;
+}
+
+/* ---- window: frame band, page area, top bar ---- */
+#band { position: absolute; top: 0; }
+#line { position: absolute; left: 0; height: 2px; width: 0; background: var(--accent); }
+#vp { position: absolute; overflow: hidden; background: #111111; }
+#shift { position: absolute; left: 0; top: 0; width: 100%; }
+.page { position: absolute; inset: 0; overflow: hidden; display: none; background: #111111; }
+.page.on { display: block; }
+.page img { position: absolute; top: 0; left: 50%; width: 1904px; height: 1036px; margin-left: -952px; }
+.page.vercel { background: #000000; }
+.page.github { background: #e9ebe8; }
+.page.google { background: #222328; }
+
+#bar { position: absolute; height: 28px; overflow: hidden; z-index: 5; }
+#barIn { position: absolute; left: 0; top: 0; width: 100%; height: 28px; background: #181818; display: flex; }
+#strip { position: relative; flex: 1; height: 28px; }
+.tab {
+  position: absolute; top: 0; height: 28px; display: flex;
+  background: #262626; color: #8c8c8c; font: 13px var(--views);
+}
+.tab.active { background: #383838; color: #f5f5f5; }
+.tab.drag { z-index: 2; }
+.tab .t {
+  flex: 1; min-width: 0; padding: 0 8px; line-height: 28px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tab .x { display: none; flex: none; width: 28px; line-height: 27px; text-align: center; font: 15px var(--views); }
+.tab.active .x, .tab.hover .x { display: block; }
+.tab .x.hover { background: #4c4c4c; }
+#newtab {
+  position: absolute; top: 0; width: 28px; height: 28px; line-height: 27px; text-align: center;
+  color: #8c8c8c; font: 17px var(--views);
+}
+#newtab.hover { background: #2e2e2e; }
+.bb { flex: none; height: 28px; line-height: 28px; text-align: center; }
+#pin { width: 32px; color: #6e6e6e; font: 14px var(--symbol); }
+#pin.pinned { color: #5b8def; }
+.wb { width: 40px; color: #b4b4b4; font: 12px var(--symbol); }
+#pin.hover, .wb.hover { background: #333333; }
+.wb.close.hover { background: #b03a3a; }
+
+/* ---- settings box (crates/app/src/shell/settings_box.rs) ---- */
+#sbox {
+  position: absolute; z-index: 6; width: 280px; box-sizing: border-box; display: none;
+  flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #3a3a3a;
+  background: #1e1e1e; font: 14px var(--views); color: #ededed;
+}
+.srow { display: flex; align-items: center; gap: 6px; height: 28px; }
+.srow .lab { flex: 1; color: #8c8c8c; padding-left: 4px; }
+.srow .ttl { flex: 1; color: #ededed; font-weight: 700; font-size: 15px; padding-left: 4px; }
+.sb { width: 28px; height: 28px; display: grid; place-items: center; font-size: 20px; line-height: 1; }
+.sb.press { background: #2c2c2c; }
+.sx { font-size: 18px; color: #8c8c8c; }
+.sx.hover { color: #ededed; }
+.sval { width: 56px; text-align: center; }
+.smode { width: 64px; height: 28px; display: grid; place-items: center; color: #8c8c8c; }
+.smode.sel { background: #383838; color: #ededed; }
+
+/* ---- home page (crates/app/home/home.css) ---- */
+.home main {
+  box-sizing: border-box; display: flex; flex-direction: column; align-items: center;
+  height: 100%; padding: 128px 24px 32px;
+}
+.home .hbar { display: flex; gap: 8px; width: 640px; }
+.home .field {
+  flex: 1; min-width: 0; height: 44px; padding: 0 16px; display: flex; align-items: center;
+  border: 1px solid #2a2a2a; border-radius: 10px; background: #181818; color: #e6e6e6;
+  font: 16px var(--sans); white-space: pre; overflow: hidden;
+}
+.home .field.focus { border-color: var(--accent); }
+.home .ph { color: #8a8a8a; }
+.home .caret { display: none; width: 1px; height: 19px; background: #e6e6e6; margin: 0 1px; }
+.home .field.focus .caret { display: block; animation: blink 1s steps(1) infinite; }
+.home .field.typing .caret { animation: none; }
+body.paused .caret { animation-play-state: paused !important; }
+@keyframes blink { 50% { opacity: 0; } }
+.home .icon {
+  flex: none; width: 44px; height: 44px; box-sizing: border-box; display: grid; place-items: center;
+  border: 1px solid #2a2a2a; border-radius: 10px; background: #181818; color: #8a8a8a;
+}
+.home .icon.hover, .home .icon.open { background: #1f1f1f; color: #e6e6e6; }
+.home .card {
+  width: 520px; margin-top: 20px; overflow: hidden; border: 1px solid #2a2a2a;
+  border-radius: 12px; background: #181818; display: none;
+}
+.home .card h2 {
+  margin: 0; padding: 11px 18px; border-bottom: 1px solid #2a2a2a; color: #8a8a8a;
+  font: 13px var(--mono); font-weight: 400;
+}
+.home .row {
+  box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; min-height: 44px; padding: 0 18px; border-bottom: 1px solid #2a2a2a;
+}
+.home .row.hover { background: #1f1f1f; }
+.home .label { color: #e6e6e6; }
+.home kbd {
+  padding: 3px 7px; border: 1px solid #3a3a3a; border-radius: 5px; background: #111111;
+  color: #e6e6e6; font: 12.5px var(--mono); white-space: nowrap;
+}
+.home .stepper { display: flex; align-items: center; gap: 6px; }
+.home .stepper .label { margin-right: 6px; }
+.home .stepper span.b {
+  width: 28px; height: 28px; box-sizing: border-box; display: grid; place-items: center;
+  border: 1px solid #2a2a2a; border-radius: 6px; font-size: 16px; line-height: 1;
+}
+.home .stepper output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+.home .mode { color: var(--accent); }
+.home .note { margin: 0; padding: 11px 18px; color: #8a8a8a; font-style: italic; text-align: right; }
+
+/* ---- demo overlays: pointer, click ripple, key badge, end card ---- */
+#cursor {
+  position: absolute; left: 0; top: 0; z-index: 50; width: 26px; height: 36px; pointer-events: none;
+  transform-origin: 0 0; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .55));
+}
+.ripple {
+  position: absolute; z-index: 49; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+  border-radius: 50%; border: 3px solid rgba(91, 141, 239, .95); background: rgba(91, 141, 239, .18);
+  pointer-events: none; box-sizing: border-box;
+}
+.ripple.mid { border-color: rgba(255, 196, 92, .95); background: rgba(255, 196, 92, .18); }
+#badge {
+  position: absolute; left: 40px; bottom: 44px; z-index: 40; display: flex; align-items: center; gap: 10px;
+  padding: 12px 24px 12px 16px; border-radius: 999px; background: rgba(22, 22, 22, .95);
+  border: 1px solid #3a3a3a; box-shadow: 0 12px 36px rgba(0, 0, 0, .55);
+  font: 600 23px var(--views); color: #ededed; opacity: 0; pointer-events: none; white-space: nowrap;
+  transform-origin: 0 100%;
+}
+#badge svg { flex: none; }
+#badge .k {
+  display: inline-block; padding: 3px 11px; border: 1px solid #4a4a4a; border-bottom-width: 3px;
+  border-radius: 8px; background: #111111; font: 600 20px var(--mono); color: #f5f5f5;
+}
+#badge .p { color: #6e6e6e; font-weight: 400; margin: 0 -4px; }
+#badge .cap { color: #c8c8c8; font-weight: 400; margin-left: 4px; }
+#badge b { color: var(--accent); }
+#paused {
+  position: absolute; right: 40px; top: 44px; z-index: 60; display: none; padding: 8px 18px;
+  border-radius: 999px; background: rgba(22, 22, 22, .95); border: 1px solid #3a3a3a;
+  font: 600 18px var(--views); color: #ededed; pointer-events: none;
+}
+body.paused #paused { display: block; }
+#end {
+  position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 18px; background: #0c0c0c;
+  opacity: 0; pointer-events: none; font-family: var(--views);
+}
+#end h1 { margin: 10px 0 0; font-size: 88px; font-weight: 600; letter-spacing: -1px; color: #f5f5f5; }
+#end .tag { font-size: 34px; color: #a0a0a0; }
+#end .url { margin-top: 18px; font: 28px var(--mono); color: var(--accent); }
+#end .hint { margin-top: 40px; font-size: 17px; color: #555555; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="band"><div id="line"></div></div>
+  <div id="vp"><div id="shift"></div></div>
+  <div id="bar"><div id="barIn">
+    <div id="strip"><div id="newtab" data-hover>+</div></div>
+    <div id="pin" class="bb" data-hover>&#x1F4CC;&#xFE0E;</div>
+    <div class="bb wb" data-hover>&#x23AF;</div>
+    <div class="bb wb" data-hover>&#x1F5D6;&#xFE0E;</div>
+    <div class="bb wb close" data-hover>&#x2715;&#xFE0E;</div>
+  </div></div>
+  <div id="sbox">
+    <div class="srow"><span class="ttl">Settings</span><span id="sclose" class="sb sx" data-hover>&#xD7;</span></div>
+    <div class="srow"><span class="lab">Padding</span><span id="sminus" class="sb" data-hover>&#x2212;</span><span id="sval" class="sval">8 px</span><span id="splus" class="sb" data-hover>+</span></div>
+    <div class="srow"><span class="lab">Top bar</span><span id="sauto" class="smode">Auto</span><span id="spinned" class="smode">Pinned</span></div>
+  </div>
+  <div id="badge"></div>
+  <div id="paused">Paused &#xB7; Space to resume</div>
+  <div id="end">
+    <svg width="140" height="140" viewBox="0 0 1024 1024" aria-hidden="true">
+      <rect x="72" y="72" width="880" height="880" rx="184" fill="#111111" stroke="#474747" stroke-width="16"/>
+      <rect x="192" y="192" width="384" height="64" rx="32" fill="#5B8DEF"/>
+      <rect x="192" y="320" width="640" height="512" rx="32" fill="#3A3A3A"/>
+    </svg>
+    <h1>mini-browser</h1>
+    <div class="tag">A dark, chrome-less browser for screen sharing</div>
+    <div class="url">github.com/montesgp/mini-browser</div>
+    <div class="hint">Space pauses &#xB7; R restarts</div>
+  </div>
+  <svg id="cursor" viewBox="0 0 26 36" aria-hidden="true">
+    <path d="M1.5 1.5 L1.5 27 L7.6 21.2 L11.8 31.2 L16 29.4 L11.9 19.6 L20.4 19.6 Z"
+      fill="#ffffff" stroke="#000000" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+</div>
+<script>
+'use strict';
+(() => {
+  // ---------------------------------------------------------------- constants
+  const W = 1920, H = 1080, BAR = 28;
+  const IMG = { vercel: 'vercel.jpg', google: 'google.jpg' };
+  const TITLES = {
+    home: 'New tab',
+    vercel: 'Agentic Infrastructure - Vercel',
+    google: 'rust programming language - Buscar con Google',
+  };
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Reduced motion slows every transition down instead of removing the tour.
+  const SLOW = REDUCED ? 1.7 : 1;
+  const params = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), band = $('band'), line = $('line'), vp = $('vp'), shift = $('shift');
+  const bar = $('bar'), barIn = $('barIn'), strip = $('strip'), newtab = $('newtab'), pin = $('pin');
+  const sbox = $('sbox'), badgeEl = $('badge'), endEl = $('end'), cursor = $('cursor');
+
+  // ---------------------------------------------------------------- scaling
+  let scale = 1, offX = 0, offY = 0;
+  function fit() {
+    scale = Math.min(innerWidth / W, innerHeight / H);
+    offX = (innerWidth - W * scale) / 2;
+    offY = (innerHeight - H * scale) / 2;
+    stage.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
+  }
+  addEventListener('resize', fit);
+  fit();
+
+  // ---------------------------------------------------------------- virtual clock
+  // `vt` is the timeline's clock (it stops while paused); `T` is the script's logical time, so
+  // every wait and tween starts where the previous one ended, whatever the frame rate.
+  let vt = 0, T = 0, paused = false, lastFrame = null;
+  let waiters = [], tweens = [];
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+  const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+  const linear = (p) => p;
+
+  function until(t) {
+    return new Promise((resolve) => {
+      if (vt >= t) resolve(); else waiters.push({ t, resolve });
+    });
+  }
+  const wait = (ms) => { T += ms; return until(T); };
+  function addTween(start, end, fn, curve) {
+    const tw = { start, end, fn, curve, started: false };
+    const p = new Promise((resolve) => { tw.resolve = resolve; });
+    if (!step(tw)) tweens.push(tw);
+    return p;
+  }
+  /** Runs one tween frame; returns whether it is done. */
+  function step(tw) {
+    if (vt < tw.start) return false;
+    const p = tw.end > tw.start ? clamp((vt - tw.start) / (tw.end - tw.start), 0, 1) : 1;
+    tw.fn(tw.curve(p));
+    if (p >= 1) { tw.resolve(); return true; }
+    return false;
+  }
+  /** A tween in the script's sequence. */
+  const tween = (ms, fn, curve = ease) => { const s = T; T += ms * SLOW; return addTween(s, T, fn, curve); };
+  /** A tween that runs alongside the script, starting `delay` ms from now. */
+  const bg = (ms, fn, curve = ease, delay = 0) => addTween(T + delay, T + delay + ms * SLOW, fn, curve);
+
+  function process() {
+    const ready = waiters.filter((w) => vt >= w.t);
+    waiters = waiters.filter((w) => vt < w.t);
+    ready.sort((a, b) => a.t - b.t).forEach((w) => w.resolve());
+    tweens = tweens.filter((tw) => !step(tw));
+  }
+
+  // ---------------------------------------------------------------- app state
+  let S, nextId;
+  const pageTop = () => S.P + (S.pinned ? BAR : 0);
+  const pageW = () => W - 2 * S.P;
+  const pageH = () => H - 2 * S.P - (S.pinned ? BAR : 0);
+  const stripW = () => W - 2 * S.P - 32 - 3 * 40;
+  function tabWidth() {
+    const n = Math.max(1, S.tabs.length);
+    return clamp(Math.floor((stripW() - 28 - 1 - (n - 1)) / n), 72, 220);
+  }
+
+  function homePage() {
+    const page = document.createElement('div');
+    page.className = 'page home';
+    page.innerHTML = `<main><div class="hbar">
+        <div class="field"><span class="txt"></span><span class="caret"></span><span class="ph">Enter URL or search…</span></div>
+        <div class="icon" data-hover><svg viewBox="0 0 24 24" width="20" height="20">
+          <rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 13.5h1M17 13.5h1M9.5 13.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg></div></div>
+      <section class="card"><h2>shortcuts</h2><div class="rows"></div><p class="note">Press a row to run it</p></section></main>`;
+    return page;
+  }
+  function renderCard(page) {
+    const rows = [
+      ['Ctrl+T', 'New tab'], ['Ctrl+L', 'Enter address'], ['Ctrl+W', 'Close tab'],
+      ['Ctrl+Tab', 'Next tab'], ['Ctrl+Shift+Tab', 'Previous tab'], ['Ctrl+1…8', 'Go to that tab', 'info'],
+      ['Ctrl+9', 'Last tab'], ['Ctrl+Shift+N', 'Move tab to new window'],
+      ['Ctrl+Shift+M', 'Return tab to its window'], ['Alt+Left', 'Back'], ['Alt+Right', 'Forward'], ['Ctrl+R', 'Reload'],
+      ['Ctrl+Shift+F', 'Top bar', 'mode'], ['Ctrl+,', 'Padding', 'padding'], ['Ctrl+Q', 'Quit'],
+    ];
+    page.querySelector('.rows').innerHTML = rows.map(([keys, label, kind]) => {
+      let right = `<span class="label">${label}</span>`;
+      if (kind === 'mode') right = `<span class="label">${label}: <span class="mode">${S.pinned ? 'Pinned' : 'Auto'}</span></span>`;
+      if (kind === 'padding') {
+        right = `<span class="stepper"><span class="label">Padding</span><span class="b">&#x2212;</span>`
+          + `<output>${Math.round(S.P)} px</output><span class="b">+</span></span>`;
+      }
+      const hover = kind ? '' : ' data-hover';
+      return `<div class="row"${hover}><kbd>${keys}</kbd>${right}</div>`;
+    }).join('');
+  }
+  function sitePage(kind) {
+    const page = document.createElement('div');
+    page.className = `page ${kind}`;
+    const img = document.createElement('img');
+    img.src = IMG[kind];
+    img.alt = '';
+    page.append(img);
+    return page;
+  }
+
+  function makeTab(kind) {
+    const el = document.createElement('div');
+    el.className = 'tab';
+    el.dataset.hover = '';
+    el.innerHTML = '<span class="t"></span><span class="x" data-hover>&#xD7;</span>';
+    strip.insertBefore(el, newtab);
+    const tab = { id: nextId++, kind, hist: [], el, page: null, x: 0, tx: 0, drag: null, alpha: 1 };
+    setPage(tab, kind);
+    return tab;
+  }
+  function setPage(tab, kind) {
+    if (tab.page) tab.page.remove();
+    tab.kind = kind;
+    tab.page = kind === 'home' ? homePage() : sitePage(kind);
+    if (kind === 'home') renderCard(tab.page);
+    shift.append(tab.page);
+    tab.el.querySelector('.t').textContent = TITLES[kind];
+  }
+  const activeTab = () => S.tabs[S.active];
+  const fieldOf = (tab) => tab.page.querySelector('.field');
+
+  function reset() {
+    waiters = []; tweens = []; vt = 0; T = 0; lastNow = 0;
+    shift.replaceChildren();
+    strip.querySelectorAll('.tab').forEach((el) => el.remove());
+    document.querySelectorAll('.ripple').forEach((el) => el.remove());
+    nextId = 1;
+    S = { P: 8, pinned: false, barVis: 0, tabs: [], active: 0, loading: null, cx: 1180, cy: 640, press: 1 };
+    S.tabs.push(makeTab('home'));
+    fieldOf(S.tabs[0]).classList.add('focus');
+    pin.classList.remove('pinned');
+    sbox.style.display = 'none';
+    setSettingsValues();
+    badgeEl.style.opacity = '0';
+    layout();
+  }
+
+  // ---------------------------------------------------------------- layout, every frame
+  // Tabs ease toward their slots on the script's clock (the timeline, or the logical time while
+  // jumping ahead with `?at=`), so seeking and pausing stay consistent.
+  let lastNow = 0;
+  function layout() {
+    const now = Math.min(vt, T), dt = Math.max(0, now - lastNow);
+    lastNow = now;
+    const P = S.P;
+    band.style.cssText = `left:${P}px;width:${W - 2 * P}px;height:${P}px`;
+    line.style.top = `${(P - 2) / 2}px`;
+    if (S.loading) {
+      const bw = W - 2 * P, seg = bw / 3, start = -seg + (bw + seg) * S.loading.p;
+      const l = clamp(start, 0, bw), r = clamp(start + seg, 0, bw);
+      line.style.left = `${l}px`; line.style.width = `${r - l}px`;
+    } else {
+      line.style.width = '0';
+    }
+    const vis = S.pinned ? 1 : S.barVis;
+    vp.style.cssText = `left:${P}px;top:${pageTop()}px;width:${pageW()}px;height:${pageH()}px`;
+    // In auto mode the shown bar moves the page down without resizing it.
+    const shiftY = S.pinned ? 0 : BAR * S.barVis;
+    shift.style.height = `${pageH()}px`;
+    shift.style.transform = `translateY(${shiftY}px)`;
+    bar.style.cssText = `left:${P}px;top:${P}px;width:${W - 2 * P}px;display:${vis > 0 ? 'block' : 'none'}`;
+    barIn.style.transform = `translateY(${(vis - 1) * BAR}px)`;
+    sbox.style.right = `${P + 16}px`;
+    sbox.style.bottom = `${P + 16}px`;
+    S.tabs.forEach((tab, i) => tab.page.classList.toggle('on', i === S.active));
+    const main = activeTab().page.querySelector('main');
+    if (main) main.style.paddingTop = `${0.12 * (H - 2 * P)}px`;
+    // A dragged tab follows the pointer.
+    const w = tabWidth();
+    const k = dt > 0 ? 1 - Math.exp(-dt / 55) : 0;
+    S.tabs.forEach((tab, i) => {
+      tab.tx = i * (w + 1);
+      if (tab.drag) tab.x = S.cx - P - tab.drag;
+      else tab.x += (tab.tx - tab.x) * k;
+      tab.el.style.left = `${tab.x}px`;
+      tab.el.style.width = `${w}px`;
+      tab.el.style.opacity = tab.alpha;
+      tab.el.classList.toggle('active', i === S.active);
+    });
+    newtab.style.left = `${S.tabs.length * (w + 1)}px`;
+    cursor.style.transform = `translate(${S.cx}px, ${S.cy}px) scale(${S.press})`;
+  }
+
+  // Hover: whatever lies under the drawn pointer gets `.hover`, like the real UI.
+  let hovered = [];
+  function updateHover() {
+    const el = document.elementFromPoint(offX + S.cx * scale + 1, offY + S.cy * scale + 1);
+    const now = [];
+    for (let n = el; n && n !== stage; n = n.parentElement) if (n.dataset && 'hover' in n.dataset) now.push(n);
+    hovered.forEach((n) => { if (!now.includes(n)) n.classList.remove('hover'); });
+    now.forEach((n) => n.classList.add('hover'));
+    hovered = now;
+  }
+
+  function frame(ts) {
+    const dt = lastFrame === null ? 0 : Math.min(ts - lastFrame, 100);
+    lastFrame = ts;
+    if (!paused) vt += dt;
+    process();
+    layout();
+    updateHover();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- script helpers
+  function center(el, dx = 0, dy = 0) {
+    layout();
+    const r = el.getBoundingClientRect();
+    return [(r.left + r.width / 2 - offX) / scale + dx, (r.top + r.height / 2 - offY) / scale + dy];
+  }
+  function moveTo(target, ms = 450) {
+    const [x, y] = Array.isArray(target) ? target : center(target);
+    let from = null;
+    return tween(ms, (p) => {
+      if (!from) from = [S.cx, S.cy];
+      S.cx = from[0] + (x - from[0]) * p;
+      S.cy = from[1] + (y - from[1]) * p;
+    });
+  }
+  async function click(middle = false) {
+    const r = document.createElement('div');
+    r.className = middle ? 'ripple mid' : 'ripple';
+    r.style.left = `${S.cx}px`; r.style.top = `${S.cy}px`;
+    stage.append(r);
+    bg(420, (p) => {
+      r.style.transform = `scale(${0.25 + 0.85 * p})`;
+      r.style.opacity = String(1 - p);
+      if (p >= 1) r.remove();
+    }, easeOut);
+    hovered.filter((n) => n.classList.contains('sb')).forEach((n) => {
+      n.classList.add('press');
+      bg(140, (p) => { if (p >= 1) n.classList.remove('press'); }, linear);
+    });
+    await tween(70, (p) => { S.press = 1 - 0.12 * p; }, linear);
+    await tween(90, (p) => { S.press = 0.88 + 0.12 * p; }, linear);
+  }
+
+  const mouseIcon = (button = 'left') => {
+    const fill = { left: 'M8 3.5a5 5 0 0 0-4.5 5V11H8z', middle: 'M7 6h2v4H7z', none: '' }[button];
+    return `<svg width="24" height="30" viewBox="0 0 16 24"><rect x="1.5" y="1.5" width="13" height="21" rx="6.5"
+      fill="none" stroke="#ededed" stroke-width="1.5"/><path d="M8 1.5V11M1.5 11h13" stroke="#ededed" stroke-width="1.2"/>
+      <path d="${fill}" fill="#5b8def"/></svg>`;
+  };
+  const keyboardIcon = `<svg width="30" height="30" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"
+    fill="none" stroke="#ededed" stroke-width="1.5"/><path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 13.5h1M17 13.5h1M9.5 13.5h5"
+    stroke="#ededed" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  const keys = (combo) => combo.split(/\+(?=.)/).map((k) => `<span class="k">${k}</span>`).join('<span class="p">+</span>');
+
+  let badgeTween = 0;
+  function badge(html, caption = '') {
+    const id = ++badgeTween;
+    if (!html) {
+      bg(160, (p) => { if (id === badgeTween) badgeEl.style.opacity = String(1 - p); });
+      return;
+    }
+    badgeEl.innerHTML = html + (caption ? `<span class="cap">${caption}</span>` : '');
+    bg(200, (p) => {
+      if (id !== badgeTween) return;
+      badgeEl.style.opacity = String(Math.min(1, p * 1.6));
+      badgeEl.style.transform = `translateY(${(1 - p) * 10}px) scale(${0.94 + 0.06 * p})`;
+    }, easeOut);
+  }
+
+  function showBar(on, ms = 140) {
+    let from = null;
+    return tween(ms, (p) => {
+      if (from === null) from = S.barVis;
+      S.barVis = from + ((on ? 1 : 0) - from) * p;
+    }, easeOut);
+  }
+  function flashBar() {
+    let from = null;
+    bg(140, (p) => {
+      if (from === null) from = S.barVis;
+      S.barVis = from + (1 - from) * p;
+    }, easeOut);
+  }
+
+  async function type(tab, text, per = 55) {
+    const field = fieldOf(tab);
+    const txt = field.querySelector('.txt'), ph = field.querySelector('.ph');
+    field.classList.add('focus', 'typing');
+    for (let i = 0; i < text.length; i++) {
+      txt.textContent = text.slice(0, i + 1);
+      ph.style.display = 'none';
+      await wait(per + ((i * 37) % 23) - 11);
+    }
+    field.classList.remove('typing');
+  }
+
+  /** Loads `kind` in `tab`: the loading line sweeps the frame's top side, then the page shows. */
+  async function load(tab, kind, back = false, ms = 820) {
+    S.loading = { p: 0 };
+    await tween(ms, (p) => { S.loading.p = p; }, linear);
+    S.loading = null;
+    if (back) tab.hist.pop(); else tab.hist.push(tab.kind);
+    setPage(tab, kind);
+    const page = tab.page;
+    if (kind === 'home') fieldOf(tab).classList.add('focus');
+    page.style.opacity = '0';
+    bg(160, (p) => { page.style.opacity = String(p); }, easeOut);
+  }
+
+  function newTab() {
+    const tab = makeTab('home');
+    S.tabs.push(tab);
+    S.active = S.tabs.length - 1;
+    tab.x = (S.tabs.length - 1) * (tabWidth() + 1);
+    tab.alpha = 0;
+    bg(140, (p) => { tab.alpha = p; }, easeOut);
+    fieldOf(tab).classList.add('focus');
+    return tab;
+  }
+  function activate(i) { S.active = i; }
+  function closeTab(tab) {
+    const i = S.tabs.indexOf(tab);
+    const activeId = activeTab().id;
+    S.tabs.splice(i, 1);
+    tab.el.remove(); tab.page.remove();
+    S.active = Math.max(0, S.tabs.findIndex((t) => t.id === activeId));
+  }
+  const tabEl = (kind) => S.tabs.find((t) => t.kind === kind);
+
+  function setSettingsValues() {
+    $('sval').textContent = `${Math.round(S.P)} px`;
+    $('sauto').classList.toggle('sel', !S.pinned);
+    $('spinned').classList.toggle('sel', S.pinned);
+  }
+  function stepPadding(dir) {
+    let from = null;
+    return tween(150, (p) => {
+      if (from === null) { from = S.P; $('sval').textContent = `${from + 2 * dir} px`; }
+      S.P = from + 2 * dir * p;
+    }, easeOut);
+  }
+  function fadeBox(on) {
+    if (on) { setSettingsValues(); sbox.style.display = 'flex'; }
+    return tween(120, (p) => {
+      sbox.style.opacity = String(on ? p : 1 - p);
+      sbox.style.transform = `translateY(${(on ? 1 - p : p) * 6}px)`;
+      if (!on && p >= 1) sbox.style.display = 'none';
+    }, easeOut);
+  }
+  function fadeEnd(on, ms) {
+    return tween(ms, (p) => { endEl.style.opacity = String(on ? p : 1 - p); });
+  }
+
+  // ---------------------------------------------------------------- the tour
+  // `?marks` records when each step starts (for checking the timeline).
+  const marks = [];
+  const mark = (name) => {
+    if (!params.has('marks')) return;
+    marks.push(`${name}@${Math.round(T)}`);
+    document.documentElement.dataset.marks = marks.join(' ');
+  };
+  async function tour(first) {
+    const t0 = S.tabs[0];
+    // The first loop holds the home page so recording can start.
+    if (!first) await fadeEnd(false, 350); else await wait(1200);
+
+    // 1. Words become a search: Google.
+    mark('1-google');
+    badge(keyboardIcon, 'Words become a search');
+    await type(t0, 'rust programming language', 30);
+    badge(keys('Enter'), 'Loading: a thin line on the frame');
+    await wait(80);
+    await load(t0, 'google', false, 520);
+    await wait(350);
+
+    // 2. The top bar appears at the top edge.
+    mark('2-top-bar');
+    badge(mouseIcon('none'), 'Point at the top: the bar slides in');
+    await moveTo([1040, S.P + 12], 350);
+    await showBar(true);
+    await wait(450);
+
+    // 3. New tab and the shortcuts card.
+    mark('3-new-tab');
+    badge(mouseIcon(), '<b>+</b> opens a new tab');
+    await moveTo(newtab, 320);
+    await click();
+    const t1 = newTab();
+    await wait(200);
+    const icon = t1.page.querySelector('.icon'), card = t1.page.querySelector('.card');
+    mark('3b-shortcuts');
+    badge(mouseIcon(), 'The keyboard icon lists every shortcut');
+    await moveTo(icon, 340);
+    await showBar(false);
+    await click();
+    fieldOf(t1).classList.remove('focus');
+    icon.classList.add('open');
+    card.style.display = 'block';
+    await tween(150, (p) => { card.style.opacity = String(p); card.style.transform = `translateY(${(1 - p) * 6}px)`; }, easeOut);
+    await wait(250);
+    const rows = card.querySelectorAll('.row');
+    await moveTo(rows[3], 280);
+    await moveTo(rows[7], 260);
+    await moveTo(rows[8], 220);
+    await wait(150);
+    badge(mouseIcon(), 'Click outside to close it');
+    await moveTo([480, 820], 280);
+    await click();
+    icon.classList.remove('open');
+    await tween(110, (p) => { card.style.opacity = String(1 - p); }, linear);
+    card.style.display = 'none';
+
+    // 4. Type an address: Vercel.
+    mark('4-vercel');
+    await moveTo(fieldOf(t1), 280);
+    await click();
+    badge(keyboardIcon, 'Type an address');
+    await type(t1, 'vercel.com', 35);
+    badge(keys('Enter'));
+    await wait(80);
+    await load(t1, 'vercel', false, 520);
+    await wait(300);
+
+    // 5. Settings: the frame grows and shrinks.
+    mark('5-settings');
+    badge(keys('Ctrl+,'), 'Settings');
+    await fadeBox(true);
+    await wait(200);
+    badge(mouseIcon(), '<b>+</b> widens the frame');
+    await moveTo($('splus'), 340);
+    for (let i = 0; i < 2; i++) {
+      await click();
+      await stepPadding(1);
+      await wait(140);
+    }
+    badge(mouseIcon(), '<b>&#x2212;</b> narrows it');
+    await moveTo($('sminus'), 230);
+    await click();
+    await stepPadding(-1);
+    await wait(250);
+    badge(mouseIcon(), '<b>&#xD7;</b> closes the box');
+    await moveTo($('sclose'), 260);
+    await click();
+    await fadeBox(false);
+    await wait(150);
+
+    // 6. Pin the bar, then unpin it.
+    mark('6-pin');
+    badge(mouseIcon('none'), 'Point at the top');
+    await moveTo([1100, S.P + 12], 340);
+    await showBar(true);
+    badge(mouseIcon(), 'Pin the bar: it stays');
+    await moveTo(pin, 300);
+    await click();
+    S.pinned = true;
+    pin.classList.add('pinned');
+    await wait(200);
+    await moveTo([1250, 600], 320);
+    await wait(450);
+    mark('7-unpin');
+    badge(mouseIcon(), 'Click again to unpin');
+    await moveTo(pin, 340);
+    await click();
+    S.pinned = false;
+    S.barVis = 1;
+    pin.classList.remove('pinned');
+    await wait(200);
+    badge(mouseIcon('none'), 'Move away: the bar hides');
+    await moveTo([1250, 600], 320);
+    await showBar(false);
+    await wait(450);
+    badge(null);
+
+    // End card.
+    mark('end-card');
+    await fadeEnd(true, 350);
+    await wait(1500);
+    mark('loop');
+  }
+
+  let runId = 0;
+  async function run() {
+    const id = ++runId;
+    let first = true;
+    for (;;) {
+      reset();
+      if (!first) endEl.style.opacity = '1';
+      await tour(first);
+      if (id !== runId) return;
+      first = false;
+    }
+  }
+
+  // ---------------------------------------------------------------- controls
+  // The keys are read on this document only: embedded in a page, they work while the demo's
+  // frame has the focus and never reach or block the page around it.
+  function setPaused(on) {
+    paused = on;
+    document.body.classList.toggle('paused', on);
+  }
+  addEventListener('keydown', (event) => {
+    if (event.code === 'Space') {
+      event.preventDefault();
+      setPaused(!paused);
+    } else if (event.key === 'r' || event.key === 'R') {
+      endEl.style.opacity = '0';
+      setPaused(false);
+      run();
+    }
+  });
+
+  run();
+  // `?at=<ms>` jumps to that point of the first loop (and `&pause` holds it there).
+  const at = Number(params.get('at'));
+  if (at > 0) vt = at;
+  if (params.has('pause')) setPaused(true);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

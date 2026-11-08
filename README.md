@@ -20,7 +20,7 @@ A minimal, dark, chrome-less Chromium browser for screen sharing, streaming and 
 
 ## Download and run
 
-Get the file for your computer from the **[latest release](https://github.com/montesgp/mini-browser/releases/latest)** (every older version stays on the [Releases page](https://github.com/montesgp/mini-browser/releases)):
+The easiest way is the **[download page](https://montesgp.github.io/mini-browser/)**: it offers the right file for your computer and explains the first launch. Or get the file from the **[latest release](https://github.com/montesgp/mini-browser/releases/latest)** (every older version stays on the [Releases page](https://github.com/montesgp/mini-browser/releases)):
 
 | Your computer | Download | Then |
 | --- | --- | --- |
@@ -103,6 +103,7 @@ This part is written for AI coding agents and developers working on or with this
 | `assets/icon` | The app icon: `icon.svg` is the master; `icon.ico`, `icon.icns` and the PNGs are rasters of it. |
 | `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
 | `.github/workflows/release.yml` | Tag-triggered release pipeline. |
+| `site/` and `.github/workflows/pages.yml` | The download page, deployed to GitHub Pages (see [Download page](#download-page)). |
 | `odd/tasks/` | Feature specs and decision logs from development. |
 
 ## Build, test and bundle
@@ -278,7 +279,11 @@ To cut a release:
    git push origin vX.Y.Z
    ```
 
-[`release.yml`](.github/workflows/release.yml) checks that the tagged commit is on `main`, that the tag matches `Cargo.toml` and that `CHANGELOG.md` has the section, builds optimized bundles on Windows (x64), macOS (arm64) and Linux (x64), attests their provenance, and publishes them with `SHA256SUMS.txt` as GitHub Release `vX.Y.Z`, using the changelog section as release notes.
+[`release.yml`](.github/workflows/release.yml) checks that the tagged commit is on `main`, that the tag matches `Cargo.toml` and that `CHANGELOG.md` has the section, builds optimized bundles on Windows (x64), macOS (arm64) and Linux (x64), adds versionless copies of the three archives for the [download page](#download-page), attests their provenance, and publishes them with `SHA256SUMS.txt` as GitHub Release `vX.Y.Z`, using the changelog section as release notes.
+
+## Download page
+
+`site/` is the static page at <https://montesgp.github.io/mini-browser/>: plain HTML, CSS and JavaScript with no dependencies or remote fonts, so it also opens from `file://`. [`pages.yml`](.github/workflows/pages.yml) deploys it to GitHub Pages on every push to `main` that touches `site/**` (or by hand with `workflow_dispatch`). The page never names a version: its buttons link the versionless assets that `release.yml` adds to each release (`releases/latest/download/mini-browser-windows-x64.zip`, `…-macos-arm64.zip`, `…-linux-x64.tar.gz`, copies of the versioned archives, listed in `SHA256SUMS.txt` and attested), and at load it reads `/repos/montesgp/mini-browser/releases/latest` from the GitHub API to show the latest tag, its date and link; if that request fails, only the version is missing. `site/demo/index.html` is the animated tour, with the Vercel and Google screenshots next to it.
 
 ## Contribution workflow
 

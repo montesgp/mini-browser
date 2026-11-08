@@ -151,6 +151,16 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Versionless copies keep `releases/latest/download/<name>` stable for the download page.
+      - name: Versionless copies
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          cp "mini-browser-v${VERSION}-windows-x64.zip" mini-browser-windows-x64.zip
+          cp "mini-browser-v${VERSION}-macos-arm64.zip" mini-browser-macos-arm64.zip
+          cp "mini-browser-v${VERSION}-linux-x64.tar.gz" mini-browser-linux-x64.tar.gz
+
       - name: Checksums
         working-directory: dist
         run: |

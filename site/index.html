@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; frame-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<title>mini-browser: a dark, chrome-less browser for screen sharing</title>
+<meta name="description" content="mini-browser is a minimal, dark, chrome-less Chromium browser for screen sharing. Free and open source for Windows, macOS and Linux.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="mini-browser">
+<meta property="og:description" content="A dark, chrome-less browser for screen sharing. Free and open source for Windows, macOS and Linux.">
+<meta property="og:url" content="https://montesgp.github.io/mini-browser/">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="main.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <svg class="logo" viewBox="0 0 1024 1024" width="96" height="96" role="img" aria-label="mini-browser icon">
+      <rect x="72" y="72" width="880" height="880" rx="184" fill="#111111" stroke="#474747" stroke-width="16"/>
+      <rect x="192" y="192" width="384" height="64" rx="32" fill="#5B8DEF"/>
+      <rect x="192" y="320" width="640" height="512" rx="32" fill="#3A3A3A"/>
+    </svg>
+    <h1>mini-browser</h1>
+    <p class="tagline">A dark, chrome-less browser for screen sharing</p>
+
+    <!-- Without JavaScript this stays the Windows button; main.js picks the visitor's system. -->
+    <a id="download" class="download" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-windows-x64.zip">
+      <span class="download-label">Download for <span id="download-os">Windows</span></span>
+      <span id="download-detail" class="download-detail">64-bit · .zip</span>
+    </a>
+    <p class="others">Also for
+      <a id="link-windows" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-windows-x64.zip" hidden>Windows</a><span id="sep-windows" hidden> · </span>
+      <a id="link-macos" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-macos-arm64.zip">macOS</a><span id="sep-macos"> · </span>
+      <a id="link-linux" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-linux-x64.tar.gz">Linux</a>
+    </p>
+    <p class="meta">Free and open source · Windows x64, Mac with Apple Silicon, Linux x64</p>
+    <p id="release" class="meta" hidden><a id="release-link" href="https://github.com/montesgp/mini-browser/releases/latest">Latest release <span id="release-tag"></span></a><span id="release-date"></span></p>
+  </header>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title" class="visually-hidden">See it in action</h2>
+    <div class="demo-frame">
+      <iframe src="demo/index.html" title="Animated tour of mini-browser: a search, the top bar sliding in, a new tab, the settings box and pinning the bar" loading="lazy"></iframe>
+    </div>
+    <p class="demo-note">Click the tour, then press <kbd>Space</kbd> to pause or <kbd>R</kbd> to restart. <a href="demo/index.html">Open it full screen</a>.</p>
+  </section>
+
+  <section class="features" aria-label="Features">
+    <article>
+      <h2>Just the page</h2>
+      <p>No toolbar, no address bar, no title bar: the website sits inside a thin dark frame, so what you share is only what matters.</p>
+    </article>
+    <article>
+      <h2>Tabs and windows when you reach for them</h2>
+      <p>Move the mouse to the top of the window and a thin bar slides in with your tabs and window buttons. It hides again when the mouse leaves, or stays if you pin it. A tab can move to a window of its own and back.</p>
+    </article>
+    <article>
+      <h2>Separate and secure</h2>
+      <p>Its own cookies and history, so nothing from your everyday browser shows up in a meeting. Real Chromium with its sandbox on, and no telemetry, analytics or accounts.</p>
+    </article>
+  </section>
+
+  <section class="help" aria-labelledby="help-title">
+    <h2 id="help-title">Opening it the first time</h2>
+    <p>Your system may warn you the first time, because the app is not code-signed yet. Here is what to do.</p>
+
+    <details id="help-windows" open>
+      <summary>Windows</summary>
+      <ol>
+        <li>Right-click the downloaded <code>.zip</code> and choose <strong>Extract All</strong>.</li>
+        <li>Open the extracted folder and double-click <code>minibrowser.exe</code>.</li>
+        <li>If you see “Windows protected your PC”, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+      </ol>
+      <p class="tip">To skip that warning: before extracting, right-click the <code>.zip</code> → <strong>Properties</strong> → tick <strong>Unblock</strong> → <strong>OK</strong>.</p>
+    </details>
+
+    <details id="help-macos">
+      <summary>macOS (Apple Silicon)</summary>
+      <ol>
+        <li>Double-click the downloaded <code>.zip</code> and move <code>minibrowser.app</code> to <strong>Applications</strong>.</li>
+        <li>The first time, right-click (or Control-click) the app and choose <strong>Open</strong>.</li>
+        <li>If it still will not open, go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</li>
+      </ol>
+      <p class="tip">It runs on Macs with Apple Silicon (M1 or newer); there is no build for Intel Macs yet.</p>
+    </details>
+
+    <details id="help-linux">
+      <summary>Linux (x64)</summary>
+      <ol>
+        <li>Extract the downloaded <code>.tar.gz</code> (or run <code>tar -xzf mini-browser-linux-x64.tar.gz</code>).</li>
+        <li>In the extracted folder, run <code>./minibrowser</code>.</li>
+        <li>If it stops with a sandbox error, follow the <a href="https://github.com/montesgp/mini-browser#linux-sandbox-setup">Linux sandbox setup</a>.</li>
+      </ol>
+    </details>
+
+    <p>Keep the extracted folder together: the app needs the files next to it.</p>
+  </section>
+</main>
+
+<footer>
+  <nav aria-label="Project links">
+    <a href="https://github.com/montesgp/mini-browser">GitHub</a>
+    <a href="https://github.com/montesgp/mini-browser/releases">All releases</a>
+    <a href="https://github.com/montesgp/mini-browser#verifying-downloads">Verifying downloads</a>
+    <a href="https://github.com/montesgp/mini-browser#code-signing-policy">Code signing policy</a>
+    <a href="https://github.com/montesgp/mini-browser#license">License: MIT or Apache-2.0</a>
+  </nav>
+  <p>mini-browser is inspired by Mini, the personal web browser built by <a href="https://rauchg.com/">Guillermo Rauch</a>.</p>
+</footer>
+</body>
+</html>
