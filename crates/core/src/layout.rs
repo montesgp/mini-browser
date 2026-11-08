@@ -177,15 +177,24 @@ pub const SNAP_EDGE: i32 = 4;
 /// it fills that half, of its top edge it maximizes, elsewhere (or off the screen) it stays.
 /// In a top corner, the side wins.
 pub fn snap_target(point: (i32, i32), screen: Rect) -> Option<Snap> {
+    snap_target_among(point, screen, &[])
+}
+
+/// [`snap_target`] with the bounds of the `other` screens: an edge shared with one of them (the
+/// pixel just past it lies on that screen) does not snap, so a window dragged across it keeps
+/// moving.
+pub fn snap_target_among(point: (i32, i32), screen: Rect, other: &[Rect]) -> Option<Snap> {
     let (x, y) = point;
     if !screen.contains(x, y) {
         return None;
     }
-    if x < screen.x + SNAP_EDGE {
+    let outer = |x, y| !other.iter().any(|screen| screen.contains(x, y));
+    let right = screen.x + screen.width;
+    if x < screen.x + SNAP_EDGE && outer(screen.x - 1, y) {
         Some(Snap::LeftHalf)
-    } else if x >= screen.x + screen.width - SNAP_EDGE {
+    } else if x >= right - SNAP_EDGE && outer(right, y) {
         Some(Snap::RightHalf)
-    } else if y < screen.y + SNAP_EDGE {
+    } else if y < screen.y + SNAP_EDGE && outer(x, screen.y - 1) {
         Some(Snap::Maximize)
     } else {
         None
@@ -446,6 +455,55 @@ mod tests {
     /// A 1920 × 1080 screen right of the primary one, its taskbar taking the bottom 48 pixels.
     fn side_screen() -> (Rect, Rect) {
         (rect(1080, -231, 1920, 1080), rect(1080, -231, 1920, 1032))
+    }
+
+    #[test]
+    fn only_outer_screen_edges_snap() {
+        // The owner's screens: a portrait primary, one screen to its upper right and one to
+        // its lower right, 8 px further right.
+        let primary = rect(0, 0, 1080, 1920);
+        let upper = rect(1080, -231, 1920, 1080);
+        let lower = rect(1088, 849, 1920, 1080);
+        // The primary's right edge is shared with the upper screen, not beside the gap.
+        assert_eq!(
+            snap_target_among((1079, 300), primary, &[upper, lower]),
+            None
+        );
+        assert_eq!(
+            snap_target_among((1079, 1500), primary, &[upper, lower]),
+            Some(Snap::RightHalf)
+        );
+        // The upper screen's left edge is shared; its top edge is outer.
+        assert_eq!(
+            snap_target_among((1080, 300), upper, &[primary, lower]),
+            None
+        );
+        assert_eq!(
+            snap_target_among((2000, -231), upper, &[primary, lower]),
+            Some(Snap::Maximize)
+        );
+        // The lower screen's top edge is shared with the upper screen.
+        assert_eq!(
+            snap_target_among((2000, 849), lower, &[primary, upper]),
+            None
+        );
+        // Beside the upper screen's top-left corner no screen lies left of it.
+        assert_eq!(
+            snap_target_among((1080, -231), upper, &[primary, lower]),
+            Some(Snap::LeftHalf)
+        );
+        // Two screens side by side: a shared side in a top corner leaves the outer top edge.
+        let left = rect(0, 0, 1920, 1080);
+        let right = rect(1920, 0, 1920, 1080);
+        assert_eq!(
+            snap_target_among((1920, 0), right, &[left]),
+            Some(Snap::Maximize)
+        );
+        // With no other screen it is `snap_target`.
+        assert_eq!(
+            snap_target_among((1080, 300), upper, &[]),
+            Some(Snap::LeftHalf)
+        );
     }
 
     #[test]
