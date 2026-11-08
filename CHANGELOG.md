@@ -4,6 +4,10 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- The download page shows its own "Page not found" page, in the same style, for addresses that do not exist, with a link back to the downloads.
+
 ## [0.4.1] - 2026-11-07
 
 ### Added
