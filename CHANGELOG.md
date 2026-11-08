@@ -4,6 +4,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-07
+
 ### Added
 
 - On Windows, `Esc` cancels a tab drag, as in Chrome: a tab dragged along the bar goes back to its place, a tab dragged out into a new window goes back into its window at its place (the new window closes), and a window moved by its only tab goes back where it was. Nothing reloads.
@@ -109,7 +111,8 @@ First public release.
 - Chromium sandbox on every platform and an isolated profile in the app data directory.
 - Release builds for Windows (x64), macOS (Apple Silicon) and Linux (x64) on GitHub Releases.
 
-[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/montesgp/mini-browser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/montesgp/mini-browser/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/montesgp/mini-browser/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/montesgp/mini-browser/compare/v0.1.0...v0.2.0
