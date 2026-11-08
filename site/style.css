@@ -54,6 +54,21 @@ code, kbd {
   white-space: nowrap;
 }
 
+/* ---- GitHub link (top right) ---- */
+.repo-link {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  padding: 6px;
+  border-radius: 50%;
+  color: var(--dim);
+  transition: color 0.15s;
+}
+
+.repo-link:hover { color: var(--accent); }
+
 /* ---- hero ---- */
 .hero {
   display: flex;
