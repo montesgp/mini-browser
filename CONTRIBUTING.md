@@ -6,9 +6,9 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## How the project is run
 
-- The owner, [@montesgp](https://github.com/montesgp), reviews and merges every external contribution. Nobody else has write access.
+- The owner, [@montesgp](https://github.com/montesgp), reviews and merges every contribution, by hand or through the owner's coding agents. Nobody else has write access.
 - Everyone else contributes through **issues** and **pull requests from a fork**.
-- Work goes into `dev`; `main` holds released code and is what GitHub Pages and releases come from. Both branches are protected: changes land only through pull requests whose `ci-gate` check is green.
+- Work goes into `dev`; `main` holds the final, promoted version and is what GitHub Pages and releases come from. Both branches are protected: they cannot be force-pushed or deleted, and every change lands through a pull request whose `ci-gate` check is green. The single exception is the owner's fast-forward of `dev` to `main` right after a promotion, which adds no new commits.
 - Workflows from forks run after the owner approves them, so your first CI run may wait for a moment.
 
 ## Reporting a bug or asking for a feature
@@ -35,11 +35,21 @@ Feature requests that add browser "chrome" (toolbars, menus, always-visible UI) 
 
 5. Open a pull request against `dev` and fill in the template. Keep it focused: one change per PR, ideally under about 400 changed lines.
 6. The owner reviews it. Address the feedback with new commits; the owner merges once it is approved and `ci-gate` is green.
-7. When `dev` is ready to ship, the owner promotes it to `main` with a pull request from `dev`.
+7. When the work on `dev` is complete and tested, the owner promotes it to `main` with a pull request from `dev`, then fast-forwards `dev` to `main` (`git push origin main:dev` once `ci-gate` is green on `main`) so both branches point at the same commit.
 
 ```
 feature branch ──► dev ──► main (GitHub Pages, tagged vX.Y.Z)
+hotfix/... ──────────────► main ──► back into dev
 ```
+
+### Hotfixes
+
+mini-browser is a desktop app that people update by hand, so most fixes simply go through `dev` like any other change. Use a hotfix only when a released version is broken and `dev` holds work that is not ready to ship:
+
+1. Create `hotfix/<short-name>` from `main`.
+2. Fix the problem (with a test where the logic allows it), bump the patch version (`X.Y.Z+1`) in `Cargo.toml` (run `cargo check` so `Cargo.lock` follows) and add its section to `CHANGELOG.md`.
+3. Open a pull request against `main`. The owner merges it once `ci-gate` is green and tags the patch release.
+4. Bring the fix back into `dev` with a pull request from `main` to `dev`.
 
 Build prerequisites and commands are in the README's [For agents and contributors](README.md#for-agents-and-contributors) part.
 
