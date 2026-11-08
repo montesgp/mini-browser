@@ -287,7 +287,7 @@ To cut a release:
 
 ## Contribution workflow
 
-Only the owner ([@montesgp](https://github.com/montesgp)) merges external contributions; the owner's own coding agents merge their PRs once `ci-gate` is green on the head commit. Everyone else forks, branches from `dev`, and opens a pull request against `dev`; the owner promotes `dev` to `main` when the changes are final. `dev` and `main` accept changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Only the owner ([@montesgp](https://github.com/montesgp)) merges external contributions; the owner's own coding agents merge their PRs once `ci-gate` is green on the head commit. Everyone else forks, branches from `dev`, and opens a pull request against `dev`; the owner promotes `dev` to `main` when the changes are final. `dev` and `main` accept changes only through PRs with a green `ci-gate`. A fix for a broken release can branch from `main` as a [hotfix](CONTRIBUTING.md#hotfixes). Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
