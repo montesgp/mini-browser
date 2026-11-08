@@ -390,6 +390,14 @@ wrap_button_delegate! {
 
     impl ButtonDelegate {
         fn on_button_pressed(&self, _button: Option<&mut Button>) {
+            // The release that ends a drag of this tab (its window follows the pointer, so the
+            // pointer is still on it) is no click: choosing the tab would hide the auto-mode bar
+            // until the pointer leaves the bar's area, and at a maximized window's top edge it
+            // never does.
+            #[cfg(target_os = "windows")]
+            if super::mouse_hook::press_ends_drag() {
+                return;
+            }
             // Activating rebuilds the strip, which destroys this button: do it after the press.
             let mut task = ActivateTab::new(self.win, self.tab);
             post_task(ThreadId::UI, Some(&mut task));

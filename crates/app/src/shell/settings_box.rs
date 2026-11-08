@@ -24,6 +24,9 @@ const MARGIN: i32 = 16;
 const INSET: i32 = 14;
 const EDGE: i32 = 1;
 const DIM_TEXT_COLOR: u32 = 0xFF8C_8C8C;
+/// The `×` at rest: brighter than the dim labels, so it is easy to find, and below the text
+/// color it takes on hover.
+const CLOSE_TEXT_COLOR: u32 = 0xFFB4_B4B4;
 /// A `−` / `+` button whose direction is at its bound.
 const BOUND_BUTTON_COLOR: u32 = 0xFF4A_4A4A;
 const WARNING_TEXT_COLOR: u32 = 0xFFD8_A657;
@@ -261,7 +264,7 @@ fn close_button(win: WindowId) -> Option<LabelButton> {
         Some(&CefString::from("\u{00D7}")),
     )?;
     button.set_font_list(Some(&CefString::from(CLOSE_FONT)));
-    button.set_enabled_text_colors(DIM_TEXT_COLOR);
+    button.set_enabled_text_colors(CLOSE_TEXT_COLOR);
     button.set_text_color(ButtonState::HOVERED, TEXT_COLOR);
     button.set_text_color(ButtonState::PRESSED, TEXT_COLOR);
     button.set_horizontal_alignment(HorizontalAlignment::CENTER);

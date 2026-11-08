@@ -115,7 +115,8 @@ pub fn next_to(window: &Window) -> Rect {
     ))
 }
 
-fn core_rect(rect: &Rect) -> layout::Rect {
+/// Converts a CEF rectangle to a core one.
+pub fn core_rect(rect: &Rect) -> layout::Rect {
     layout::Rect {
         x: rect.x,
         y: rect.y,

@@ -141,6 +141,58 @@ pub fn closes_without_tabs(other_windows: usize) -> bool {
     other_windows > 0
 }
 
+/// Where a tab drag started: the tab's window, its place among that window's tabs, and whether
+/// the drag moves that window (its only tab), so `Esc` can undo the drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DragStart {
+    pub window: WindowId,
+    pub index: usize,
+    pub moves_window: bool,
+}
+
+/// What `Esc` undoes in a tab drag, as in Chrome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelDrag {
+    /// Put `window`, moved by its only tab, back where it was.
+    MoveBack { window: WindowId },
+    /// Put the dragged tab back at `index` among the tabs of its own `window`.
+    Reorder { window: WindowId, index: usize },
+    /// Move the dragged tab from window `from` back into `window` at `index`; `from` closes
+    /// when it is left without tabs.
+    Return {
+        from: WindowId,
+        window: WindowId,
+        index: usize,
+    },
+    /// Nothing: the window the tab came from closed.
+    Nothing,
+}
+
+/// What `Esc` undoes in the tab drag that started at `start`, with the tab now in window `now`
+/// and the window it came from still open (`source_open`) or not.
+pub fn cancel_drag(start: DragStart, now: WindowId, source_open: bool) -> CancelDrag {
+    let DragStart {
+        window,
+        index,
+        moves_window,
+    } = start;
+    if now == window {
+        if moves_window {
+            CancelDrag::MoveBack { window }
+        } else {
+            CancelDrag::Reorder { window, index }
+        }
+    } else if source_open {
+        CancelDrag::Return {
+            from: now,
+            window,
+            index,
+        }
+    } else {
+        CancelDrag::Nothing
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +379,68 @@ mod tests {
         assert!(!closes_without_tabs(0));
         assert!(closes_without_tabs(1));
         assert!(closes_without_tabs(3));
+    }
+
+    fn start(window: WindowId, index: usize, moves_window: bool) -> DragStart {
+        DragStart {
+            window,
+            index,
+            moves_window,
+        }
+    }
+
+    #[test]
+    fn esc_puts_a_tab_dragged_along_its_strip_back_in_place() {
+        assert_eq!(
+            cancel_drag(start(1, 2, false), 1, true),
+            CancelDrag::Reorder {
+                window: 1,
+                index: 2
+            }
+        );
+        // Torn off and dragged back onto its own strip: still a reorder.
+        assert_eq!(
+            cancel_drag(start(1, 0, false), 1, true),
+            CancelDrag::Reorder {
+                window: 1,
+                index: 0
+            }
+        );
+    }
+
+    #[test]
+    fn esc_returns_a_torn_off_tab_to_its_window_and_place() {
+        // In its own new window, or joined to another window.
+        for now in [2, 3] {
+            assert_eq!(
+                cancel_drag(start(1, 4, false), now, true),
+                CancelDrag::Return {
+                    from: now,
+                    window: 1,
+                    index: 4
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn esc_puts_a_window_moved_by_its_only_tab_back() {
+        assert_eq!(
+            cancel_drag(start(5, 0, true), 5, true),
+            CancelDrag::MoveBack { window: 5 }
+        );
+    }
+
+    #[test]
+    fn esc_does_nothing_once_the_tabs_window_closed() {
+        // A window's only tab joined another window, which closed it.
+        assert_eq!(
+            cancel_drag(start(5, 0, true), 2, false),
+            CancelDrag::Nothing
+        );
+        assert_eq!(
+            cancel_drag(start(1, 3, false), 2, false),
+            CancelDrag::Nothing
+        );
     }
 }
