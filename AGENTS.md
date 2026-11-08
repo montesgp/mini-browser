@@ -40,7 +40,7 @@ Requirements: Rust stable, CMake and Ninja on `PATH`, a C++ toolchain. On Window
 
 ## Pull requests and releases
 
-- `main` is protected: changes land through PRs only, with `ci-gate` green on the head commit. Only the owner, [@montesgp](https://github.com/montesgp), merges external contributions. The owner's own coding agents merge their PRs once `ci-gate` is SUCCESS on the exact head commit; never merge into a branch whose checks did not run. External contributors work from forks.
+- Branches: feature branch → PR into `dev` → promote `dev` to `main` with a PR once the changes are final. `main` is what GitHub Pages and releases come from. Both `dev` and `main` are protected: changes land through PRs only, with `ci-gate` green on the head commit. Only the owner, [@montesgp](https://github.com/montesgp), merges external contributions. The owner's own coding agents merge their PRs once `ci-gate` is SUCCESS on the exact head commit; never merge into a branch whose checks did not run. External contributors work from forks.
 - Releases are tag-driven (`vX.Y.Z` on a commit already on `main`); the steps are in the README's [Versioning and releases](README.md#versioning-and-releases) section. Do not create tags or releases unless the maintainer asks.
 
 ## Known platform quirks

@@ -272,7 +272,7 @@ To cut a release:
 
 1. Move the `Unreleased` notes in `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` and update the links at the bottom.
 2. Set `version = "X.Y.Z"` in `Cargo.toml` and run `cargo check` so `Cargo.lock` follows.
-3. Merge to `main` through a PR, then tag and push:
+3. Merge the release changes into `dev`, promote `dev` to `main` through a PR, then tag and push:
 
    ```sh
    git tag -a vX.Y.Z -m "mini-browser vX.Y.Z"
@@ -283,11 +283,11 @@ To cut a release:
 
 ## Download page
 
-`site/` is the static page at <https://montesgp.github.io/mini-browser/>: plain HTML, CSS and JavaScript with no dependencies or remote fonts, so it also opens from `file://`. [`pages.yml`](.github/workflows/pages.yml) deploys it to GitHub Pages on every push to `main` that touches `site/**` (or by hand with `workflow_dispatch`). The page never names a version: its buttons link the versionless assets that `release.yml` adds to each release (`releases/latest/download/mini-browser-windows-x64.zip`, `…-macos-arm64.zip`, `…-linux-x64.tar.gz`, copies of the versioned archives, listed in `SHA256SUMS.txt` and attested), and at load it reads `/repos/montesgp/mini-browser/releases/latest` from the GitHub API to show the latest tag, its date and link; if that request fails, only the version is missing. `site/demo/index.html` is the animated tour, with the Vercel and Google screenshots next to it. `site/404.html` is the page GitHub Pages shows for any missing path, in the same style; it is served at any depth, so its links start at `/mini-browser/`.
+`site/` is the static page at <https://montesgp.github.io/mini-browser/>: plain HTML, CSS and JavaScript with no dependencies or remote fonts, so it also opens from `file://`. [`pages.yml`](.github/workflows/pages.yml) deploys it to GitHub Pages on every push to `main` that touches `site/**` (or by hand with `workflow_dispatch`), so site changes made on `dev` go live when `dev` is promoted to `main`. The page never names a version: its buttons link the versionless assets that `release.yml` adds to each release (`releases/latest/download/mini-browser-windows-x64.zip`, `…-macos-arm64.zip`, `…-linux-x64.tar.gz`, copies of the versioned archives, listed in `SHA256SUMS.txt` and attested), and at load it reads `/repos/montesgp/mini-browser/releases/latest` from the GitHub API to show the latest tag, its date and link; if that request fails, only the version is missing. `site/demo/index.html` is the animated tour, with the Vercel and Google screenshots next to it. `site/404.html` is the page GitHub Pages shows for any missing path, in the same style; it is served at any depth, so its links start at `/mini-browser/`.
 
 ## Contribution workflow
 
-Only the owner ([@montesgp](https://github.com/montesgp)) merges external contributions; the owner's own coding agents merge their PRs once `ci-gate` is green on the head commit. Everyone else forks, branches from `main`, and opens a pull request; `main` accepts changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Only the owner ([@montesgp](https://github.com/montesgp)) merges external contributions; the owner's own coding agents merge their PRs once `ci-gate` is green on the head commit. Everyone else forks, branches from `dev`, and opens a pull request against `dev`; the owner promotes `dev` to `main` when the changes are final. `dev` and `main` accept changes only through PRs with a green `ci-gate`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); conduct rules in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 

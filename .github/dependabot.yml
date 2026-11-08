@@ -1,8 +1,9 @@
-# Keeps pinned GitHub Actions (by commit SHA) and Rust dependencies current through weekly PRs.
+# Keeps pinned GitHub Actions (by commit SHA) and Rust dependencies current through weekly PRs into dev.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     groups:
@@ -10,6 +11,7 @@ updates:
         patterns: ["*"]
   - package-ecosystem: cargo
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     ignore:
