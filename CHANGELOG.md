@@ -6,6 +6,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Added
 
+- A build for Intel Macs: each release also carries `mini-browser-vX.Y.Z-macos-x64.zip` and its versionless copy `mini-browser-macos-x64.zip`. Like the Apple Silicon build, it needs macOS 13 or later.
 - The download page shows its own "Page not found" page, in the same style, for addresses that do not exist, with a link back to the downloads.
 
 ## [0.4.1] - 2026-11-07

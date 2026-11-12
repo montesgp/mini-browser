@@ -101,7 +101,7 @@ This part is written for AI coding agents and developers working on or with this
 | `crates/app/home` | The home page's `index.html`, `home.css` and `home.js`, embedded in the app with `include_str!`. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
 | `assets/icon` | The app icon: `icon.svg` is the master; `icon.ico`, `icon.icns` and the PNGs are rasters of it. |
-| `.github/workflows/build.yml` | CI on Windows, macOS and Linux; `ci-gate` is the single required check. |
+| `.github/workflows/build.yml` | CI on Windows, macOS (Apple Silicon and Intel) and Linux; `ci-gate` is the single required check. |
 | `.github/workflows/release.yml` | Tag-triggered release pipeline. |
 | `site/` and `.github/workflows/pages.yml` | The download page, deployed to GitHub Pages (see [Download page](#download-page)). |
 | `odd/tasks/` | Feature specs and decision logs from development. |
@@ -145,7 +145,7 @@ The icon (a dark frame around a window, with the blue loading line on top) lives
 
 ### Platform status
 
-Windows is built, tested and exercised by hand. Linux (x64) was run by hand in WSL2 with WSLg (Ubuntu 26.04): it renders, and its renderers run inside Chromium's namespace and seccomp sandbox. macOS (Apple Silicon) compiles, passes tests and is bundled, but nobody has used it by hand yet. CI launches the real app on all three systems (`.github/scripts/smoke-test.sh`): it must stay up with its helper processes, and on Linux with seccomp-sandboxed children. Windows ARM64, Linux ARM64 and Intel Macs are supported by cef-rs but not built.
+Windows is built, tested and exercised by hand. Linux (x64) was run by hand in WSL2 with WSLg (Ubuntu 26.04): it renders, and its renderers run inside Chromium's namespace and seccomp sandbox. macOS (Apple Silicon on `macos-latest`, Intel on `macos-15-intel`) compiles, passes tests and is bundled, but nobody has used it by hand yet; each Mac bundle holds only the runner's architecture, which CI checks with `lipo -archs`. CEF 156 needs macOS 13 or later. CI launches the real app on all four builds (`.github/scripts/smoke-test.sh`): it must stay up with its helper processes, and on Linux with seccomp-sandboxed children. Windows ARM64 and Linux ARM64 are supported by cef-rs but not built. GitHub's `macos-15-intel` is its last Intel macOS runner image; when it is retired, the Intel bundle has to be cross-compiled (`x86_64-apple-darwin`) on Apple Silicon.
 
 ## Address resolution
 
@@ -279,7 +279,7 @@ To cut a release:
    git push origin vX.Y.Z
    ```
 
-[`release.yml`](.github/workflows/release.yml) checks that the tagged commit is on `main`, that the tag matches `Cargo.toml` and that `CHANGELOG.md` has the section, builds optimized bundles on Windows (x64), macOS (arm64) and Linux (x64), adds versionless copies of the three archives for the [download page](#download-page), attests their provenance, and publishes them with `SHA256SUMS.txt` as GitHub Release `vX.Y.Z`, using the changelog section as release notes.
+[`release.yml`](.github/workflows/release.yml) checks that the tagged commit is on `main`, that the tag matches `Cargo.toml` and that `CHANGELOG.md` has the section, builds optimized bundles on Windows (x64), macOS (arm64 and x64) and Linux (x64), adds versionless copies of the four archives for the [download page](#download-page), attests their provenance, and publishes them with `SHA256SUMS.txt` as GitHub Release `vX.Y.Z`, using the changelog section as release notes.
 
 ## Download page
 

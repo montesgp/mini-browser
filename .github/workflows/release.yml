@@ -56,6 +56,8 @@ jobs:
             platform: windows-x64
           - os: macos-latest
             platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x64
           - os: ubuntu-latest
             platform: linux-x64
     runs-on: ${{ matrix.os }}
@@ -102,6 +104,13 @@ jobs:
           out="dist/${PACKAGE}"
           mkdir -p "${out}"
           for app in dist/bundle/*.app; do ditto "${app}" "${out}/$(basename "${app}")"; done
+          # Each Mac archive holds one architecture: the runner's (arm64 or x86_64).
+          for app in "${out}"/*.app; do
+            exe="${app}/Contents/MacOS/$(plutil -extract CFBundleExecutable raw "${app}/Contents/Info.plist")"
+            archs="$(lipo -archs "${exe}")"
+            echo "${exe}: ${archs}"
+            [ "${archs}" = "$(uname -m)" ] || { echo "::error::${exe} is ${archs}, expected $(uname -m)"; exit 1; }
+          done
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY_NOTICES.md "${out}/"
           credits="$(find "${out}" -name CREDITS.html -print -quit)"
           if [ -n "${credits}" ]; then cp "${credits}" "${out}/CREDITS.html"; fi
@@ -159,6 +168,7 @@ jobs:
         run: |
           cp "mini-browser-v${VERSION}-windows-x64.zip" mini-browser-windows-x64.zip
           cp "mini-browser-v${VERSION}-macos-arm64.zip" mini-browser-macos-arm64.zip
+          cp "mini-browser-v${VERSION}-macos-x64.zip" mini-browser-macos-x64.zip
           cp "mini-browser-v${VERSION}-linux-x64.tar.gz" mini-browser-linux-x64.tar.gz
 
       - name: Checksums
