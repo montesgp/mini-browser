@@ -14,6 +14,7 @@
   const HELP = ['windows', 'macos', 'linux'];
   // Systems the latest release has a file for: all of them until the release says otherwise.
   let available = Object.keys(SYSTEMS);
+  let openHelp = null;
   const $ = (id) => document.getElementById(id);
 
   /** `windows`, `macos`, `linux`, or null for phones, tablets and anything unknown. */
@@ -74,11 +75,14 @@
       const separator = $(`sep-${k}`);
       if (separator) separator.hidden = !others.includes(k) || k === others[others.length - 1];
     });
-    HELP.forEach((h) => { $(`help-${h}`).open = h === system.help; });
+    // Open the system's help once; later renders for the same help keep what the visitor toggled.
+    if (system.help !== openHelp) {
+      openHelp = system.help;
+      HELP.forEach((h) => { $(`help-${h}`).open = h === system.help; });
+    }
   }
 
   /** File names of the latest release, or null when it cannot be read. */
-
   async function showLatestRelease() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
@@ -110,11 +114,17 @@
   }
 
   const initial = detectSystem() || 'windows';
-  showSystem(initial);
-  // Then tell Apple Silicon from Intel, and hide what the latest release has no file for
-  // (releases before the Intel build); if the release cannot be read, offer everything.
-  Promise.all([initial === 'macos' ? detectMac() : initial, showLatestRelease()]).then(([key, assets]) => {
-    if (assets) available = Object.keys(SYSTEMS).filter((k) => assets.includes(SYSTEMS[k].file));
-    showSystem(available.includes(key) ? key : initial);
+  let chosen = initial;
+  // The best guess, unless the latest release has no file for it; then the first guess.
+  const render = () => showSystem(available.includes(chosen) ? chosen : initial);
+  render();
+  // On a Mac, tell Apple Silicon from Intel without waiting for the release.
+  if (initial === 'macos') detectMac().then((key) => { chosen = key; render(); });
+  // Hide what the latest release has no file for (releases before the Intel build);
+  // if the release cannot be read, offer everything.
+  showLatestRelease().then((assets) => {
+    if (!assets) return;
+    available = Object.keys(SYSTEMS).filter((k) => assets.includes(SYSTEMS[k].file));
+    render();
   });
 })();
