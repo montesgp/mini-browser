@@ -148,6 +148,16 @@ mod tests {
     }
 
     #[test]
+    fn only_the_validated_numbers_come_out_of_a_response() {
+        assert_eq!(
+            newer_release_in_response(RUNNING, br#"{"tag_name":" v0.6.0"}"#),
+            None
+        );
+        let shown = newer_release_in_response(RUNNING, br#"{"tag_name":"v0.06.00"}"#).unwrap();
+        assert_eq!(shown.to_string(), "0.6.0");
+    }
+
+    #[test]
     fn versions_display_without_the_v() {
         assert_eq!(version(0, 10, 2).to_string(), "0.10.2");
     }

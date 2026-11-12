@@ -227,6 +227,13 @@ mod tests {
     }
 
     #[test]
+    fn a_turned_off_update_check_survives_a_mistyped_top_bar() {
+        let settings = Settings::from_json(r#"{"topBar":5,"checkForUpdates":false}"#);
+        assert!(!settings.check_for_updates);
+        assert_eq!(settings.top_bar, TopBarMode::Auto);
+    }
+
+    #[test]
     fn the_update_check_can_be_turned_off_and_on() {
         assert!(!Settings::from_json(r#"{"checkForUpdates":false}"#).check_for_updates);
         assert!(Settings::from_json(r#"{"checkForUpdates":true}"#).check_for_updates);

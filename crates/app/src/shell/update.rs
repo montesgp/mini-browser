@@ -189,6 +189,8 @@ wrap_task! {
     impl Task {
         fn execute(&self) {
             if ROUND.get() == self.round && enabled() {
+                // A request still unanswered after a day is stuck: drop it so the check runs.
+                cancel_pending();
                 check(self.round);
                 schedule(self.round);
             }
