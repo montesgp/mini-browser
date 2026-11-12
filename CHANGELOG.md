@@ -4,6 +4,8 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-12
+
 ### Added
 
 - A build for Intel Macs: each release also carries `mini-browser-vX.Y.Z-macos-x64.zip` and its versionless copy `mini-browser-macos-x64.zip`. Like the Apple Silicon build, it needs macOS 13 or later.
@@ -117,7 +119,8 @@ First public release.
 - Chromium sandbox on every platform and an isolated profile in the app data directory.
 - Release builds for Windows (x64), macOS (Apple Silicon) and Linux (x64) on GitHub Releases.
 
-[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/montesgp/mini-browser/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/montesgp/mini-browser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/montesgp/mini-browser/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/montesgp/mini-browser/compare/v0.2.0...v0.3.0
