@@ -43,10 +43,11 @@
     </a>
     <p class="others">Also for
       <a id="link-windows" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-windows-x64.zip" hidden>Windows</a><span id="sep-windows" hidden> · </span>
-      <a id="link-macos" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-macos-arm64.zip">macOS</a><span id="sep-macos"> · </span>
+      <a id="link-macos" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-macos-arm64.zip">macOS (Apple Silicon)</a><span id="sep-macos"> · </span>
+      <a id="link-macos-intel" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-macos-x64.zip">macOS (Intel)</a><span id="sep-macos-intel"> · </span>
       <a id="link-linux" href="https://github.com/montesgp/mini-browser/releases/latest/download/mini-browser-linux-x64.tar.gz">Linux</a>
     </p>
-    <p class="meta">Free and open source · Windows x64, Mac with Apple Silicon, Linux x64</p>
+    <p class="meta">Free and open source · Windows x64, Mac with Apple Silicon or Intel (macOS 13 or later), Linux x64</p>
     <p id="release" class="meta" hidden><a id="release-link" href="https://github.com/montesgp/mini-browser/releases/latest">Latest release <span id="release-tag"></span></a><span id="release-date"></span></p>
   </header>
 
@@ -88,13 +89,13 @@
     </details>
 
     <details id="help-macos">
-      <summary>macOS (Apple Silicon)</summary>
+      <summary>macOS (Apple Silicon or Intel)</summary>
       <ol>
         <li>Double-click the downloaded <code>.zip</code> and move <code>minibrowser.app</code> to <strong>Applications</strong>.</li>
-        <li>The first time, right-click (or Control-click) the app and choose <strong>Open</strong>.</li>
-        <li>If it still will not open, go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</li>
+        <li>Open it. If macOS says it cannot check the app, go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>. On macOS 14 or older you can instead right-click (or Control-click) the app and choose <strong>Open</strong>.</li>
+        <li>If it says the app “is damaged”, run <code>xattr -dr com.apple.quarantine /Applications/minibrowser.app</code> in Terminal, then open it again.</li>
       </ol>
-      <p class="tip">It runs on Macs with Apple Silicon (M1 or newer); there is no build for Intel Macs yet.</p>
+      <p class="tip">It needs macOS 13 Ventura or later. Not sure which file? Apple menu → <strong>About This Mac</strong> shows <strong>Chip</strong> (Apple M1 or newer: Apple Silicon) or <strong>Processor</strong> (Intel).</p>
     </details>
 
     <details id="help-linux">

@@ -25,13 +25,14 @@ The easiest way is the **[download page](https://montesgp.github.io/mini-browser
 | Your computer | Download | Then |
 | --- | --- | --- |
 | Windows | `…-windows-x64.zip` | Extract it and open `minibrowser.exe`. |
-| Mac (Apple Silicon) | `…-macos-arm64.zip` | Extract it, move `minibrowser.app` to Applications and open it. |
+| Mac (Apple Silicon: M1 or newer) | `…-macos-arm64.zip` | Extract it, move `minibrowser.app` to Applications and open it. |
+| Mac (Intel) | `…-macos-x64.zip` | Same as Apple Silicon. |
 | Linux | `…-linux-x64.tar.gz` | Extract it and run `./minibrowser`. |
 
 The first time, your system may warn you because the app is not code-signed yet (see [Code signing policy](#code-signing-policy)):
 
 - **Windows:** Microsoft Defender SmartScreen shows "Windows protected your PC" for new unsigned apps. Click **More info → Run anyway**. To skip the prompt, before extracting right-click the downloaded `.zip` → **Properties** → tick **Unblock** → **OK**. You can check the file first, see [Verifying downloads](#verifying-downloads).
-- **Mac:** if it will not open, allow it under **System Settings → Privacy & Security**.
+- **Mac:** it needs macOS 13 or later. If it will not open, allow it under **System Settings → Privacy & Security → Open Anyway**; if macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/minibrowser.app` in Terminal.
 - **Linux:** if it stops with a sandbox error, see [Linux sandbox setup](#linux-sandbox-setup).
 
 Keep the extracted folder together: the app needs the files next to it.
@@ -283,7 +284,7 @@ To cut a release:
 
 ## Download page
 
-`site/` is the static page at <https://montesgp.github.io/mini-browser/>: plain HTML, CSS and JavaScript with no dependencies or remote fonts, so it also opens from `file://`. [`pages.yml`](.github/workflows/pages.yml) deploys it to GitHub Pages on every push to `main` that touches `site/**` (or by hand with `workflow_dispatch`), so site changes made on `dev` go live when `dev` is promoted to `main`. The page never names a version: its buttons link the versionless assets that `release.yml` adds to each release (`releases/latest/download/mini-browser-windows-x64.zip`, `…-macos-arm64.zip`, `…-linux-x64.tar.gz`, copies of the versioned archives, listed in `SHA256SUMS.txt` and attested), and at load it reads `/repos/montesgp/mini-browser/releases/latest` from the GitHub API to show the latest tag, its date and link; if that request fails, only the version is missing. `site/demo/index.html` is the animated tour, with the Vercel and Google screenshots next to it. `site/404.html` is the page GitHub Pages shows for any missing path, in the same style; it is served at any depth, so its links start at `/mini-browser/`. `site/og-image.png` (1200×630) is the preview that chats and social networks show when the link is shared (the icon and the name, kept inside the centered 630×630 square that WhatsApp crops for its thumbnail), referenced by the `og:image` tags in `index.html`; when you regenerate it, bump the `?v=` in `og:image` so apps that cached the old one fetch it again.
+`site/` is the static page at <https://montesgp.github.io/mini-browser/>: plain HTML, CSS and JavaScript with no dependencies or remote fonts, so it also opens from `file://`. [`pages.yml`](.github/workflows/pages.yml) deploys it to GitHub Pages on every push to `main` that touches `site/**` (or by hand with `workflow_dispatch`), so site changes made on `dev` go live when `dev` is promoted to `main`. The page never names a version: its buttons link the versionless assets that `release.yml` adds to each release (`releases/latest/download/mini-browser-windows-x64.zip`, `…-macos-arm64.zip`, `…-macos-x64.zip`, `…-linux-x64.tar.gz`, copies of the versioned archives, listed in `SHA256SUMS.txt` and attested), and at load it reads `/repos/montesgp/mini-browser/releases/latest` from the GitHub API to show the latest tag, its date and link; if that request fails, only the version is missing. The same answer lists the release's files, and the page hides the links to files it lacks (releases older than the Intel Mac build). `main.js` picks the system from the client hints or the user agent; on a Mac, where both say "Intel" on any chip, it reads the WebGL renderer (`Apple M…` versus Intel, AMD or NVIDIA GPUs, which also sees through Rosetta) and then the `architecture` client hint, and otherwise offers Apple Silicon. Phones, tablets and unknown systems get the Windows button with the other links shown. `site/demo/index.html` is the animated tour, with the Vercel and Google screenshots next to it. `site/404.html` is the page GitHub Pages shows for any missing path, in the same style; it is served at any depth, so its links start at `/mini-browser/`. `site/og-image.png` (1200×630) is the preview that chats and social networks show when the link is shared (the icon and the name, kept inside the centered 630×630 square that WhatsApp crops for its thumbnail), referenced by the `og:image` tags in `index.html`; when you regenerate it, bump the `?v=` in `og:image` so apps that cached the old one fetch it again.
 
 ## Contribution workflow
 
