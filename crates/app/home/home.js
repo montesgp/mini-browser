@@ -9,11 +9,15 @@
   const toggle = document.getElementById('toggle');
   const card = document.getElementById('card');
   const rows = document.getElementById('rows');
+  const update = document.getElementById('update');
+  const updateText = document.getElementById('update-text');
+  const download = document.getElementById('download');
 
   let state = {
     platform: /Mac/.test(navigator.platform) ? 'macos' : 'windows',
     padding: null,
     topBar: null,
+    update: null,
   };
 
   /** Asks the app for `path` (`state` or `cmd/<name>?…`) and shows the state it returns. */
@@ -103,8 +107,16 @@
     return stepper;
   }
 
-  /** Draws the rows again, keeping the keyboard focus on the same control. */
+  /** Shows the notice of a newer release (`state.update`, such as `0.6.0`) or hides it. */
+  function renderUpdate() {
+    const version = typeof state.update === 'string' ? state.update : '';
+    updateText.textContent = version ? `mini-browser ${version} is available` : '';
+    update.hidden = !version;
+  }
+
+  /** Draws the update notice and the rows again, keeping the keyboard focus on the same control. */
   function render() {
+    renderUpdate();
     const focused = document.activeElement;
     const focusId = focused && focused.dataset ? focused.dataset.focusId : undefined;
     rows.replaceChildren();
@@ -162,6 +174,7 @@
   });
 
   toggle.addEventListener('click', () => setCardOpen(card.hidden));
+  download.addEventListener('click', () => run('download'));
 
   // A click outside the open card and its toggle closes the card, and so does `Esc`.
   document.addEventListener('click', (event) => {

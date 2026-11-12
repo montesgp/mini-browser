@@ -1,5 +1,6 @@
-//! The settings box: a small dark overlay to change the padding frame and when the top bar
-//! shows, with a thin edge in the address box's border color so it stands out on dark pages.
+//! The settings box: a small dark overlay to change the padding frame, when the top bar shows
+//! and whether the app checks for updates, with a notice when a newer release is out, and a thin
+//! edge in the address box's border color so it stands out on dark pages.
 //! Every window has its own box; the settings are the app's, so every change applies at once to
 //! every window and is saved to the settings file.
 
@@ -13,7 +14,7 @@ use mini_core::{
 
 use super::{
     address_box::{self, BORDER_COLOR, BOX_COLOR, TEXT_COLOR},
-    home, tabs, top_bar,
+    home, tabs, top_bar, update,
     window::{self, DarkPanelDelegate},
     windows::{self, WindowId},
 };
@@ -45,6 +46,9 @@ const BUTTON_SIZE: i32 = 28;
 const MODE_WIDTH: i32 = 64;
 /// Background of the selected top bar mode.
 const SELECTED_COLOR: u32 = 0xFF38_3838;
+/// The Download button's text, in the home page's accent blue.
+const ACCENT_TEXT_COLOR: u32 = 0xFF5B_8DEF;
+const DOWNLOAD_WIDTH: i32 = 96;
 
 const VK_ESCAPE: i32 = 0x1B;
 
@@ -57,8 +61,14 @@ pub struct SettingsBox {
     plus: LabelButton,
     auto: LabelButton,
     pinned: LabelButton,
+    updates_on: LabelButton,
+    updates_off: LabelButton,
     close: LabelButton,
     not_saved: LabelButton,
+    /// The update notice: its line of text and the row with the Download button.
+    notice: Panel,
+    notice_text: LabelButton,
+    download: LabelButton,
 }
 
 /// The app's settings, shared by every window, and where they are saved.
@@ -116,6 +126,12 @@ pub fn create(win: WindowId, window: &Window) {
         Some(bar_label),
         Some(auto),
         Some(pinned),
+        Some(updates_label),
+        Some(updates_on),
+        Some(updates_off),
+        Some(notice_text),
+        Some(download_spacer),
+        Some(download),
         Some(not_saved),
         Some(unsaved),
     ) = (
@@ -128,6 +144,12 @@ pub fn create(win: WindowId, window: &Window) {
         text(win, "Top bar", FONT, DIM_TEXT_COLOR),
         mode_button(win, TopBarMode::Auto),
         mode_button(win, TopBarMode::Pinned),
+        text(win, "Update check", FONT, DIM_TEXT_COLOR),
+        choice_button(win, "On", Choice::Updates(true), MODE_WIDTH),
+        choice_button(win, "Off", Choice::Updates(false), MODE_WIDTH),
+        text(win, "", FONT, TEXT_COLOR),
+        text(win, "", FONT, TEXT_COLOR),
+        download_button(win),
         text(win, NOT_SAVED, FONT, WARNING_TEXT_COLOR),
         STORE.with_borrow(|store| store.as_ref().map(|store| store.unsaved)),
     )
@@ -145,12 +167,17 @@ pub fn create(win: WindowId, window: &Window) {
         (&title, [&close].as_slice()),
         (&label, [&minus, &value, &plus].as_slice()),
         (&bar_label, [&auto, &pinned].as_slice()),
+        (&updates_label, [&updates_on, &updates_off].as_slice()),
     ] {
         let Some(row) = row(label, controls) else {
             return;
         };
         panel.add_child_view(Some(&mut View::from(&row)));
     }
+    let Some(notice) = notice(&notice_text, &download_spacer, &download) else {
+        return;
+    };
+    panel.add_child_view(Some(&mut View::from(&notice)));
     panel.add_child_view(Some(&mut View::from(&not_saved)));
     let Some(panel) = edged(&panel) else {
         return;
@@ -173,11 +200,34 @@ pub fn create(win: WindowId, window: &Window) {
         plus,
         auto,
         pinned,
+        updates_on,
+        updates_off,
         close,
         not_saved,
+        notice,
+        notice_text,
+        download,
     }));
     show_padding(win);
     show_top_bar(win);
+    show_update_check(win);
+    show_update(win);
+}
+
+/// The (hidden) update notice: `text` on its own line, then `download` on the right of a row
+/// that starts with the empty `spacer`; the line is too long to share a row with the button.
+fn notice(text: &LabelButton, spacer: &LabelButton, download: &LabelButton) -> Option<Panel> {
+    let notice = panel_create(Some(&mut DarkPanelDelegate::new(BOX_COLOR, 0)))?;
+    notice.set_to_box_layout(Some(&BoxLayoutSettings {
+        between_child_spacing: 6,
+        cross_axis_alignment: AxisAlignment::STRETCH,
+        ..Default::default()
+    }));
+    notice.add_child_view(Some(&mut View::from(text)));
+    let row = row(spacer, &[download])?;
+    notice.add_child_view(Some(&mut View::from(&row)));
+    notice.set_visible(0);
+    Some(notice)
 }
 
 /// A row with `label` on the left and `controls` on the right.
@@ -281,20 +331,49 @@ fn close_button(win: WindowId) -> Option<LabelButton> {
 
 /// An `Auto` or `Pinned` button that sets when the top bar shows.
 fn mode_button(win: WindowId, mode: TopBarMode) -> Option<LabelButton> {
+    choice_button(win, mode_name(mode), Choice::TopBar(mode), MODE_WIDTH)
+}
+
+/// A `width` pixels wide button labeled `label` that makes `choice`.
+fn choice_button(win: WindowId, label: &str, choice: Choice, width: i32) -> Option<LabelButton> {
     let button = label_button_create(
-        Some(&mut SettingsButtonDelegate::new(win, Choice::TopBar(mode))),
-        Some(&CefString::from(mode_name(mode))),
+        Some(&mut SettingsButtonDelegate::new(win, choice)),
+        Some(&CefString::from(label)),
     )?;
     button.set_font_list(Some(&CefString::from(FONT)));
     button.set_horizontal_alignment(HorizontalAlignment::CENTER);
     let size = Size {
-        width: MODE_WIDTH,
+        width,
         height: BUTTON_SIZE,
     };
     button.set_minimum_size(Some(&size));
     button.set_maximum_size(Some(&size));
     button.set_focusable(1);
     Some(button)
+}
+
+/// The notice's Download button, which opens the download page in the default browser.
+fn download_button(win: WindowId) -> Option<LabelButton> {
+    let button = choice_button(win, "Download", Choice::Download, DOWNLOAD_WIDTH)?;
+    button.set_background_color(SELECTED_COLOR);
+    button.set_enabled_text_colors(ACCENT_TEXT_COLOR);
+    button.set_accessible_name(Some(&CefString::from(
+        "Download the new version (opens the download page in your browser)",
+    )));
+    Some(button)
+}
+
+/// Marks `button` as the selected choice of its row or not, and names it `name` with that state.
+fn show_selected(button: &LabelButton, selected: bool, name: &str) {
+    let (background, text_color) = if selected {
+        (SELECTED_COLOR, TEXT_COLOR)
+    } else {
+        (BOX_COLOR, DIM_TEXT_COLOR)
+    };
+    button.set_background_color(background);
+    button.set_enabled_text_colors(text_color);
+    let state = if selected { "selected" } else { "not selected" };
+    button.set_accessible_name(Some(&CefString::from(format!("{name} ({state})").as_str())));
 }
 
 fn mode_name(mode: TopBarMode) -> &'static str {
@@ -319,17 +398,55 @@ fn show_top_bar(win: WindowId) {
     };
     let mode = settings.top_bar;
     for (button_mode, button) in buttons {
-        let selected = button_mode == mode;
-        let (background, text_color) = if selected {
-            (SELECTED_COLOR, TEXT_COLOR)
-        } else {
-            (BOX_COLOR, DIM_TEXT_COLOR)
-        };
-        button.set_background_color(background);
-        button.set_enabled_text_colors(text_color);
-        let state = if selected { "selected" } else { "not selected" };
-        let name = format!("Top bar: {} ({state})", mode_name(button_mode));
-        button.set_accessible_name(Some(&CefString::from(name.as_str())));
+        let name = format!("Top bar: {}", mode_name(button_mode));
+        show_selected(&button, button_mode == mode, &name);
+    }
+}
+
+/// Highlights `On` or `Off` for the update check in the box of window `win`.
+fn show_update_check(win: WindowId) {
+    let (Some(settings), Some(buttons)) = (
+        settings(),
+        with_box(win, |settings_box| {
+            [
+                (true, "On", settings_box.updates_on.clone()),
+                (false, "Off", settings_box.updates_off.clone()),
+            ]
+        }),
+    ) else {
+        return;
+    };
+    for (enabled, label, button) in buttons {
+        let name = format!("Update check: {label}");
+        show_selected(&button, enabled == settings.check_for_updates, &name);
+    }
+}
+
+/// Shows the notice of the available update in the box of window `win`, or hides it.
+fn show_update(win: WindowId) {
+    let Some((notice, notice_text)) = with_box(win, |settings_box| {
+        (
+            settings_box.notice.clone(),
+            settings_box.notice_text.clone(),
+        )
+    }) else {
+        return;
+    };
+    if let Some(version) = update::available() {
+        let line = format!("mini-browser {version} is available");
+        notice_text.set_text(Some(&CefString::from(line.as_str())));
+        notice.set_visible(1);
+    } else {
+        notice.set_visible(0);
+    }
+    // The notice changes the box's height.
+    reposition(win);
+}
+
+/// Shows the available update, or hides its notice, in every box.
+pub fn show_update_everywhere() {
+    for win in windows::ids() {
+        show_update(win);
     }
 }
 
@@ -406,6 +523,21 @@ fn set_top_bar(mode: TopBarMode) {
     }
 }
 
+/// Turns the update check on or off and saves it; on checks right away, off hides any notice.
+fn set_check_for_updates(enabled: bool) {
+    let Some(settings) = change(|settings| Settings {
+        check_for_updates: enabled,
+        ..settings.clone()
+    }) else {
+        return;
+    };
+    for win in windows::ids() {
+        show_update_check(win);
+        reposition(win);
+    }
+    update::set_enabled(settings.check_for_updates);
+}
+
 /// Switches the top bar between auto and pinned and saves it (`Ctrl/Cmd+Shift+F`).
 pub fn toggle_top_bar() {
     if let Some(settings) = settings() {
@@ -473,8 +605,12 @@ pub fn toggle(win: WindowId) {
     };
     let at_max = !settings.can_move_padding(1);
     address_box::hide(win);
-    // Theme changes reset button backgrounds, so show the selected mode again.
+    // Theme changes reset button backgrounds, so show the selected choices again.
     show_top_bar(win);
+    show_update_check(win);
+    if let Some(download) = with_box(win, |settings_box| settings_box.download.clone()) {
+        download.set_background_color(SELECTED_COLOR);
+    }
     reposition(win);
     controller.set_visible(1);
     // Focus a button, so the window gets `Esc` and the shortcuts.
@@ -501,6 +637,9 @@ fn close_if_focus_left(win: WindowId) {
                 settings_box.plus.clone(),
                 settings_box.auto.clone(),
                 settings_box.pinned.clone(),
+                settings_box.updates_on.clone(),
+                settings_box.updates_off.clone(),
+                settings_box.download.clone(),
                 settings_box.close.clone(),
             ],
         )
@@ -612,6 +751,10 @@ enum Choice {
     Padding(i32),
     /// The top bar mode of an `Auto` / `Pinned` button.
     TopBar(TopBarMode),
+    /// The update check of an `On` / `Off` button.
+    Updates(bool),
+    /// The notice's Download button.
+    Download,
     /// The `×` that closes the box.
     Close,
 }
@@ -636,6 +779,8 @@ wrap_button_delegate! {
                 Choice::None => {}
                 Choice::Padding(steps) => step(steps),
                 Choice::TopBar(mode) => set_top_bar(mode),
+                Choice::Updates(enabled) => set_check_for_updates(enabled),
+                Choice::Download => update::open_download_page(),
                 Choice::Close => hide(self.win),
             }
         }
