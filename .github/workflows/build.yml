@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # macos-latest is Apple Silicon; macos-15-intel builds and runs the Intel Mac bundle.
+        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +50,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('Cargo.lock') }}
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -72,6 +73,17 @@ jobs:
         run: |
           readelf -d target/bundle/minibrowser | grep -E 'RUNPATH|RPATH'
           if ldd target/bundle/minibrowser | grep 'not found'; then exit 1; fi
+
+      # Each Mac bundle holds one architecture: the runner's (arm64 or x86_64), as in release.yml.
+      - name: Bundle matches the runner's architecture (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for app in target/bundle/*.app; do
+            exe="${app}/Contents/MacOS/$(plutil -extract CFBundleExecutable raw "${app}/Contents/Info.plist")"
+            archs="$(lipo -archs "${exe}")"
+            echo "${exe}: ${archs}"
+            [ "${archs}" = "$(uname -m)" ] || { echo "::error::${exe} is ${archs}, expected $(uname -m)"; exit 1; }
+          done
 
       # Launch the real app: it must stay up with its helper processes (and, on Linux, with
       # Chromium's sandbox active). Screenshots and logs are kept as artifacts.
