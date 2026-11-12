@@ -19,6 +19,7 @@ mod settings_box;
 mod tab_strip;
 mod tabs;
 mod top_bar;
+mod update;
 mod window;
 mod windows;
 

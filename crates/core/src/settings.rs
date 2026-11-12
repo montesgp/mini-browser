@@ -26,6 +26,9 @@ pub struct Settings {
     /// When the top bar with the tabs and window buttons shows.
     #[serde(deserialize_with = "lenient_top_bar")]
     pub top_bar: TopBarMode,
+    /// Whether the app asks GitHub once a day for a newer release.
+    #[serde(deserialize_with = "lenient_check_for_updates")]
+    pub check_for_updates: bool,
 }
 
 /// When the top bar shows: on hover (and briefly when the tabs change), or always.
@@ -53,6 +56,7 @@ impl Default for Settings {
             padding: PADDING_DEFAULT,
             search_template: DEFAULT_SEARCH_TEMPLATE.to_owned(),
             top_bar: TopBarMode::Auto,
+            check_for_updates: true,
         }
     }
 }
@@ -126,6 +130,13 @@ fn lenient_top_bar<'de, D: Deserializer<'de>>(deserializer: D) -> Result<TopBarM
     Ok(TopBarMode::deserialize(value).unwrap_or_default())
 }
 
+/// Reads the update check switch; any value other than `true` or `false` counts as `true`, so it
+/// never makes the rest of the file count as corrupt.
+fn lenient_check_for_updates<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_bool().unwrap_or(true))
+}
+
 /// Reads any JSON integer (negative or beyond `u32`) as a padding clamped to the valid range.
 /// Other values, including fractions and integers too large for JSON parsers to keep exact,
 /// are an error, so the whole file counts as corrupt.
@@ -197,12 +208,65 @@ mod tests {
             padding: 12,
             search_template: "https://duckduckgo.com/?q={query}".into(),
             top_bar: TopBarMode::Pinned,
+            check_for_updates: false,
         };
         let json = settings.to_json();
         assert!(json.contains("\"padding\": 12"), "{json}");
         assert!(json.contains("\"searchTemplate\""), "{json}");
         assert!(json.contains("\"topBar\": \"pinned\""), "{json}");
+        assert!(json.contains("\"checkForUpdates\": false"), "{json}");
         assert_eq!(Settings::from_json(&json), settings);
+    }
+
+    #[test]
+    fn the_update_check_is_on_by_default() {
+        assert!(Settings::default().check_for_updates);
+        assert!(Settings::from_json(r#"{"padding":10}"#).check_for_updates);
+        let json = Settings::default().to_json();
+        assert!(json.contains("\"checkForUpdates\": true"), "{json}");
+    }
+
+    #[test]
+    fn a_turned_off_update_check_survives_a_mistyped_top_bar() {
+        let settings = Settings::from_json(r#"{"topBar":5,"checkForUpdates":false}"#);
+        assert!(!settings.check_for_updates);
+        assert_eq!(settings.top_bar, TopBarMode::Auto);
+    }
+
+    #[test]
+    fn the_update_check_can_be_turned_off_and_on() {
+        assert!(!Settings::from_json(r#"{"checkForUpdates":false}"#).check_for_updates);
+        assert!(Settings::from_json(r#"{"checkForUpdates":true}"#).check_for_updates);
+    }
+
+    #[test]
+    fn a_mistyped_update_check_is_on_and_keeps_the_other_fields() {
+        for value in [r#""false""#, "0", "null", "[]", "{}"] {
+            let json = format!(
+                r#"{{"padding":12,"searchTemplate":"https://duckduckgo.com/?q={{query}}","topBar":"pinned","checkForUpdates":{value}}}"#
+            );
+            let settings = Settings::from_json(&json);
+            assert!(settings.check_for_updates, "{value}");
+            assert_eq!(settings.padding, 12, "{value}");
+            assert_eq!(
+                settings.search_template, "https://duckduckgo.com/?q={query}",
+                "{value}"
+            );
+            assert_eq!(settings.top_bar, TopBarMode::Pinned, "{value}");
+        }
+    }
+
+    #[test]
+    fn a_turned_off_update_check_survives_save_and_load() {
+        let dir = scratch_dir("updates");
+        let path = dir.join(SETTINGS_FILE);
+        let settings = Settings {
+            check_for_updates: false,
+            ..Settings::default()
+        };
+        settings.save(&path).expect("save settings");
+        assert_eq!(Settings::load(&path), settings);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
