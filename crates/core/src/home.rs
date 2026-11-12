@@ -2,7 +2,7 @@
 //! the files and runs the commands; only it ever loads the home page (the address box and
 //! `--url` turn `mini:` input into a search, see [`crate::address::resolve_input`]).
 
-use crate::{settings::TopBarMode, shortcuts::Command};
+use crate::{settings::TopBarMode, shortcuts::Command, update::Version};
 
 /// The scheme of the app's own pages.
 pub const SCHEME: &str = "mini";
@@ -54,6 +54,8 @@ pub enum HomeCommand {
     Run(Command),
     /// Move the padding by one step, `-1` or `1`.
     Padding(i32),
+    /// Open the download page in the system's default browser.
+    Download,
 }
 
 /// What a request under [`HOME_URL`] asks for.
@@ -108,6 +110,7 @@ fn command(name: &str, query: &str) -> Option<HomeCommand> {
         "move-to-new-window" => run(Command::MoveTabToNewWindow),
         "return-tab" => run(Command::ReturnTab),
         "settings" => run(Command::OpenSettings),
+        "download" => Some(HomeCommand::Download),
         _ => None,
     }
 }
@@ -123,12 +126,19 @@ pub const fn platform_name() -> &'static str {
     }
 }
 
-/// The `state` reply: `{"platform": …, "padding": …, "topBar": "auto" | "pinned"}`.
-pub fn state_json(platform: &str, padding: u32, top_bar: TopBarMode) -> String {
+/// The `state` reply: `{"platform": …, "padding": …, "topBar": "auto" | "pinned",
+/// "update": "X.Y.Z" | null}`, where `update` is the newer release the page announces.
+pub fn state_json(
+    platform: &str,
+    padding: u32,
+    top_bar: TopBarMode,
+    update: Option<Version>,
+) -> String {
     serde_json::json!({
         "platform": platform,
         "padding": padding,
         "topBar": top_bar,
+        "update": update.map(|version| version.to_string()),
     })
     .to_string()
 }
@@ -193,6 +203,18 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn download_opens_the_download_page_and_takes_no_url() {
+        assert_eq!(
+            command_of("mini://home/cmd/download"),
+            Some(HomeCommand::Download)
+        );
+        assert_eq!(
+            command_of("mini://home/cmd/download?url=https%3A%2F%2Fevil.example%2F"),
+            Some(HomeCommand::Download)
+        );
     }
 
     #[test]
@@ -267,6 +289,10 @@ mod tests {
             "mini://home/cmd/new-tab/x",
             "mini://home/cmd/new-window",
             "mini://home/cmd/return-tab/x",
+            "mini://home/cmd/download/x",
+            "mini://home/cmd/DOWNLOAD",
+            "mini://home/cmd/update",
+            "mini://home/cmd/open-url",
             "mini://home/other.html",
             "mini://home/cmd",
             "mini://homes/",
@@ -298,16 +324,35 @@ mod tests {
     }
 
     #[test]
-    fn state_json_names_the_platform_padding_and_top_bar() {
+    fn state_json_names_the_platform_padding_top_bar_and_update() {
         let value: serde_json::Value =
-            serde_json::from_str(&state_json("macos", 12, TopBarMode::Pinned)).unwrap();
+            serde_json::from_str(&state_json("macos", 12, TopBarMode::Pinned, None)).unwrap();
         assert_eq!(
             value,
-            serde_json::json!({"platform": "macos", "padding": 12, "topBar": "pinned"})
+            serde_json::json!({
+                "platform": "macos",
+                "padding": 12,
+                "topBar": "pinned",
+                "update": null,
+            })
         );
+        let update = Version {
+            major: 0,
+            minor: 10,
+            patch: 2,
+        };
         let value: serde_json::Value =
-            serde_json::from_str(&state_json("windows", 8, TopBarMode::Auto)).unwrap();
-        assert_eq!(value["topBar"], "auto");
+            serde_json::from_str(&state_json("windows", 8, TopBarMode::Auto, Some(update)))
+                .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "platform": "windows",
+                "padding": 8,
+                "topBar": "auto",
+                "update": "0.10.2",
+            })
+        );
     }
 
     #[test]
