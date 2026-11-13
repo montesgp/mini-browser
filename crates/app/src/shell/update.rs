@@ -1,8 +1,10 @@
 //! The update check: while the setting is on, asks GitHub's API for the latest release at
 //! startup and then once a day, from the browser process with CEF's `UrlRequest`. A newer
 //! version shows a notice on the home page and in the settings box; its Download button opens
-//! the download page in the system's default browser. Any failure is silent. The version rules,
-//! the URLs and the size limit live in `mini_core::update`.
+//! the download page in the system's default browser. A failed check (offline, an HTTP error, no
+//! answer within 30 s) shows nothing and is retried after 1, 5 and 15 minutes, then hourly, until
+//! one succeeds. The version rules, the URLs, the limits and the retry delays live in
+//! `mini_core::update`.
 
 use std::{
     cell::{Cell, RefCell},
@@ -10,7 +12,10 @@ use std::{
 };
 
 use cef::*;
-use mini_core::update::{self, CHECK_INTERVAL_MS, LATEST_RELEASE_URL, MAX_RESPONSE_BYTES, Version};
+use mini_core::update::{
+    self, CHECK_INTERVAL_MS, CheckOutcome, LATEST_RELEASE_URL, MAX_RESPONSE_BYTES,
+    REQUEST_TIMEOUT_MS, Version,
+};
 
 use super::{home, settings_box};
 
@@ -29,6 +34,12 @@ thread_local! {
     static ROUND: Cell<u64> = const { Cell::new(0) };
     /// The request in flight, kept alive until it completes.
     static PENDING: RefCell<Option<Urlrequest>> = const { RefCell::new(None) };
+    /// Numbers each request, so the answer or the timeout of a replaced one does nothing.
+    static REQUEST: Cell<u64> = const { Cell::new(0) };
+    /// Failed checks in a row, which set the next retry delay.
+    static FAILURES: Cell<u32> = const { Cell::new(0) };
+    /// Numbers each scheduled retry, so only the latest one runs.
+    static RETRY: Cell<u64> = const { Cell::new(0) };
 }
 
 /// The newer release to announce, if any.
@@ -62,7 +73,22 @@ fn enabled() -> bool {
 fn next_round() -> u64 {
     let round = ROUND.get().wrapping_add(1);
     ROUND.set(round);
+    FAILURES.set(0);
     round
+}
+
+/// Checks again after the delay for the failures so far; an earlier scheduled retry is dropped.
+fn schedule_retry(round: u64) {
+    let failures = FAILURES.get().saturating_add(1);
+    FAILURES.set(failures);
+    let retry = RETRY.get().wrapping_add(1);
+    RETRY.set(retry);
+    let mut task = RetryCheck::new(round, retry);
+    post_delayed_task(
+        ThreadId::UI,
+        Some(&mut task),
+        update::retry_delay_ms(failures),
+    );
 }
 
 /// Starts a new round: drops the request of the earlier one, checks now and schedules the daily
@@ -111,9 +137,29 @@ fn check(round: u64) {
     #[allow(clippy::unnecessary_cast)]
     let flags = sys::cef_urlrequest_flags_t::UR_FLAG_STOP_ON_REDIRECT.0 as i32;
     request.set_flags(flags);
-    let mut client = UpdateClient::new(round, Arc::new(Mutex::new(Some(Vec::new()))));
-    if let Some(pending) = urlrequest_create(Some(&mut request), Some(&mut client), None) {
-        PENDING.set(Some(pending));
+    let id = REQUEST.get().wrapping_add(1);
+    REQUEST.set(id);
+    let mut client = UpdateClient::new(round, id, Arc::new(Mutex::new(Some(Vec::new()))));
+    match urlrequest_create(Some(&mut request), Some(&mut client), None) {
+        Some(pending) => {
+            PENDING.set(Some(pending));
+            let mut timeout = RequestTimeout::new(id);
+            post_delayed_task(ThreadId::UI, Some(&mut timeout), REQUEST_TIMEOUT_MS);
+        }
+        None => schedule_retry(round),
+    }
+}
+
+/// Applies the outcome of the current request of round `round`: a failure is retried soon, an
+/// answer resets the failures and may announce a version.
+fn finish(round: u64, outcome: CheckOutcome) {
+    match outcome {
+        CheckOutcome::Failed => schedule_retry(round),
+        CheckOutcome::UpToDate => FAILURES.set(0),
+        CheckOutcome::Newer(version) => {
+            FAILURES.set(0);
+            set_available(Some(version));
+        }
     }
 }
 
@@ -189,10 +235,40 @@ wrap_task! {
     impl Task {
         fn execute(&self) {
             if ROUND.get() == self.round && enabled() {
-                // A request still unanswered after a day is stuck: drop it so the check runs.
-                cancel_pending();
                 check(self.round);
                 schedule(self.round);
+            }
+        }
+    }
+}
+
+wrap_task! {
+    struct RetryCheck {
+        round: u64,
+        retry: u64,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            if ROUND.get() == self.round && RETRY.get() == self.retry && enabled() {
+                check(self.round);
+            }
+        }
+    }
+}
+
+// Cancels request `request` if it is still unanswered; its completion then counts as a failure.
+wrap_task! {
+    struct RequestTimeout {
+        request: u64,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            if REQUEST.get() == self.request
+                && let Some(request) = PENDING.with_borrow(Clone::clone)
+            {
+                request.cancel();
             }
         }
     }
@@ -202,6 +278,7 @@ wrap_task! {
 wrap_urlrequest_client! {
     struct UpdateClient {
         round: u64,
+        request: u64,
         body: Arc<Mutex<Option<Vec<u8>>>>,
     }
 
@@ -230,24 +307,23 @@ wrap_urlrequest_client! {
         }
 
         fn on_request_complete(&self, request: Option<&mut Urlrequest>) {
-            if ROUND.get() != self.round {
+            // A request replaced by a newer one, or from an earlier round, decides nothing.
+            if ROUND.get() != self.round || REQUEST.get() != self.request {
                 return;
             }
             PENDING.set(None);
-            let Some(request) = request else {
-                return;
-            };
-            let succeeded = request.request_status() == UrlrequestStatus::SUCCESS
-                && request
-                    .response()
-                    .is_some_and(|response| (200..300).contains(&response.status()));
+            let succeeded = request.is_some_and(|request| {
+                request.request_status() == UrlrequestStatus::SUCCESS
+                    && request
+                        .response()
+                        .is_some_and(|response| (200..300).contains(&response.status()))
+            });
             let body = self.body.lock().ok().and_then(|mut body| body.take());
-            let version = body
-                .filter(|_| succeeded)
-                .and_then(|body| update::newer_release_in_response(env!("CARGO_PKG_VERSION"), &body));
-            if version.is_some() {
-                set_available(version);
-            }
+            let body = body.filter(|_| succeeded);
+            finish(
+                self.round,
+                update::check_outcome(env!("CARGO_PKG_VERSION"), body.as_deref()),
+            );
         }
     }
 }

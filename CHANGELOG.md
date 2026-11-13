@@ -6,7 +6,7 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ### Added
 
-- The app tells you when a new version is out: at startup and then once a day it asks GitHub for the latest release, and when that is newer, the home page and the settings box show "mini-browser X.Y.Z is available" with a Download button that opens the download page in your default browser. Nothing is downloaded or installed for you, and a failed check shows nothing. It is on by default; turn it off with the settings box's new **Update check** row (`checkForUpdates` in `settings.json`).
+- The app tells you when a new version is out: at startup and then once a day it asks GitHub for the latest release, and when that is newer, the home page and the settings box show "mini-browser X.Y.Z is available" with a Download button that opens the download page in your default browser. Nothing is downloaded or installed for you. A failed check (offline, for example) shows nothing and is retried after 1, 5 and 15 minutes, then every hour, until it gets an answer. It is on by default; turn it off with the settings box's new **Update check** row (`checkForUpdates` in `settings.json`).
 
 ## [0.5.0] - 2026-11-12
 

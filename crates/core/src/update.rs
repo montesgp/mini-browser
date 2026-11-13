@@ -13,6 +13,46 @@ pub const DOWNLOAD_PAGE_URL: &str = "https://montesgp.github.io/mini-browser/";
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// How often the app checks while it runs: once a day.
 pub const CHECK_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
+/// A request still unanswered after this long is cancelled and counts as a failed check.
+pub const REQUEST_TIMEOUT_MS: i64 = 30 * 1000;
+
+/// What one check learned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckOutcome {
+    /// GitHub announced this release, newer than the running version.
+    Newer(Version),
+    /// GitHub answered and there is nothing newer to announce.
+    UpToDate,
+    /// No usable answer (offline, an HTTP error, a timeout, not GitHub's JSON): retry soon.
+    Failed,
+}
+
+/// The outcome of a check whose request ended with `body`, or `None` when the request failed
+/// (network error, non-2xx status, timeout, too large). An answer whose `tag_name` is not a
+/// valid newer tag is still an answer: retrying would not change it.
+pub fn check_outcome(running: &str, body: Option<&[u8]>) -> CheckOutcome {
+    let tag = body
+        .and_then(|body| serde_json::from_slice::<serde_json::Value>(body).ok())
+        .and_then(|release| release.get("tag_name")?.as_str().map(str::to_owned));
+    match tag {
+        None => CheckOutcome::Failed,
+        Some(tag) => {
+            newer_release(running, &tag).map_or(CheckOutcome::UpToDate, CheckOutcome::Newer)
+        }
+    }
+}
+
+/// How long to wait before checking again after `failures` failed checks in a row (1 or more):
+/// 1 minute, then 5, then 15, then every hour until a check succeeds.
+pub fn retry_delay_ms(failures: u32) -> i64 {
+    const MINUTE: i64 = 60 * 1000;
+    match failures {
+        0 | 1 => MINUTE,
+        2 => 5 * MINUTE,
+        3 => 15 * MINUTE,
+        _ => 60 * MINUTE,
+    }
+}
 
 /// A release version `MAJOR.MINOR.PATCH`, ordered by its numbers in that order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -60,8 +100,10 @@ pub fn newer_release(running: &str, tag: &str) -> Option<Version> {
 /// The newer version announced by a latest-release response `body` (GitHub's JSON with a
 /// `tag_name`), or `None` when the body is not such JSON or the release is not newer.
 pub fn newer_release_in_response(running: &str, body: &[u8]) -> Option<Version> {
-    let release: serde_json::Value = serde_json::from_slice(body).ok()?;
-    newer_release(running, release.get("tag_name")?.as_str()?)
+    match check_outcome(running, Some(body)) {
+        CheckOutcome::Newer(version) => Some(version),
+        CheckOutcome::UpToDate | CheckOutcome::Failed => None,
+    }
 }
 
 /// A decimal number of ASCII digits only (no sign, no spaces), or `None`.
@@ -155,6 +197,66 @@ mod tests {
         );
         let shown = newer_release_in_response(RUNNING, br#"{"tag_name":"v0.06.00"}"#).unwrap();
         assert_eq!(shown.to_string(), "0.6.0");
+    }
+
+    #[test]
+    fn a_failed_request_or_an_unusable_answer_is_a_failed_check() {
+        assert_eq!(check_outcome(RUNNING, None), CheckOutcome::Failed);
+        for body in [
+            b"not json".as_slice(),
+            b"",
+            b"\xff\xfe",
+            br#"{"tag_name":"v0.6.0""#,
+            br#"["v0.6.0"]"#,
+            br#"{"name":"v0.6.0"}"#,
+            br#"{"tag_name":6}"#,
+            br#"{"message":"API rate limit exceeded"}"#,
+        ] {
+            assert_eq!(
+                check_outcome(RUNNING, Some(body)),
+                CheckOutcome::Failed,
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn an_answer_is_newer_or_up_to_date() {
+        assert_eq!(
+            check_outcome(RUNNING, Some(br#"{"tag_name":"v0.6.0"}"#)),
+            CheckOutcome::Newer(version(0, 6, 0))
+        );
+        for body in [
+            br#"{"tag_name":"v0.5.0"}"#.as_slice(),
+            br#"{"tag_name":"v0.4.9"}"#,
+            br#"{"tag_name":"v0.6.0-rc.1"}"#,
+            br#"{"tag_name":"garbage"}"#,
+        ] {
+            assert_eq!(
+                check_outcome(RUNNING, Some(body)),
+                CheckOutcome::UpToDate,
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+        assert_eq!(
+            check_outcome("0.5.0-dev", Some(br#"{"tag_name":"v0.6.0"}"#)),
+            CheckOutcome::UpToDate
+        );
+    }
+
+    #[test]
+    fn retries_wait_1_5_15_minutes_then_every_hour() {
+        const MINUTE: i64 = 60 * 1000;
+        assert_eq!(retry_delay_ms(1), MINUTE);
+        assert_eq!(retry_delay_ms(2), 5 * MINUTE);
+        assert_eq!(retry_delay_ms(3), 15 * MINUTE);
+        assert_eq!(retry_delay_ms(4), 60 * MINUTE);
+        assert_eq!(retry_delay_ms(50), 60 * MINUTE);
+        assert_eq!(retry_delay_ms(u32::MAX), 60 * MINUTE);
+        assert_eq!(retry_delay_ms(0), MINUTE);
+        assert_eq!(REQUEST_TIMEOUT_MS, 30_000);
     }
 
     #[test]
