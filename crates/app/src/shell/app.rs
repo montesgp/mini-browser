@@ -9,7 +9,7 @@ use mini_core::{
 
 use std::path::PathBuf;
 
-use super::{client::MiniClient, home, settings_box, tabs, window, windows};
+use super::{client::MiniClient, home, settings_box, tabs, update, window, windows};
 
 /// The `--url` input of `command_line` (`--url=<input>` or `--url <input>`), empty without one.
 pub fn url_input(command_line: &CommandLine) -> String {
@@ -121,6 +121,8 @@ wrap_browser_process_handler! {
             let url = resolve_input(&self.url_input, &settings.search_template, &local_files());
             settings_box::init(settings, settings_path);
             window::open(MiniClient::new(), url);
+            // After the first window, so the startup check never delays it.
+            update::start();
         }
 
         fn on_already_running_app_relaunch(

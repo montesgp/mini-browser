@@ -15,7 +15,7 @@ use mini_core::{
     home::{self, Asset, HomeCommand, Route},
 };
 
-use super::{app, commands, settings_box, tabs, windows::WindowId};
+use super::{app, commands, settings_box, tabs, update, windows::WindowId};
 
 const INDEX_HTML: &str = include_str!("../../home/index.html");
 const HOME_CSS: &str = include_str!("../../home/home.css");
@@ -51,7 +51,7 @@ pub fn focus_address_field(win: WindowId) {
 }
 
 /// Makes every open home page read the settings again, so its commands card shows the current
-/// top bar mode and padding at once.
+/// top bar mode and padding, and its notice the available update, at once.
 pub fn refresh_state() {
     tabs::with_home_browsers(|browser| {
         if let Some(frame) = browser.main_frame() {
@@ -94,7 +94,12 @@ impl Reply {
 
     fn state() -> Self {
         let settings = settings_box::settings().unwrap_or_default();
-        let json = home::state_json(home::platform_name(), settings.padding, settings.top_bar);
+        let json = home::state_json(
+            home::platform_name(),
+            settings.padding,
+            settings.top_bar,
+            update::available(),
+        );
         Self::new(200, "application/json", Cow::Owned(json.into_bytes()))
     }
 
@@ -139,6 +144,7 @@ fn answer(request: &UiRequest) -> Reply {
         }
         Some(HomeCommand::Run(command)) => commands::run(win, *command),
         Some(HomeCommand::Padding(steps)) => settings_box::step(*steps),
+        Some(HomeCommand::Download) => update::open_download_page(),
         None => {}
     }
     Reply::state()

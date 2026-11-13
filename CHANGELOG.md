@@ -4,6 +4,12 @@ All notable changes to mini-browser are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-12
+
+### Added
+
+- The app tells you when a new version is out: at startup and then once a day it asks GitHub for the latest release, and when that is newer, the home page and the settings box show "mini-browser X.Y.Z is available" with a Download button that opens the download page in your default browser. Nothing is downloaded or installed for you. A failed check (offline, for example) shows nothing and is retried after 1, 5 and 15 minutes, then every hour, until it gets an answer. It is on by default; turn it off with the settings box's new **Update check** row (`checkForUpdates` in `settings.json`).
+
 ## [0.5.0] - 2026-11-12
 
 ### Added
@@ -119,7 +125,8 @@ First public release.
 - Chromium sandbox on every platform and an isolated profile in the app data directory.
 - Release builds for Windows (x64), macOS (Apple Silicon) and Linux (x64) on GitHub Releases.
 
-[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/montesgp/mini-browser/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/montesgp/mini-browser/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/montesgp/mini-browser/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/montesgp/mini-browser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/montesgp/mini-browser/compare/v0.3.0...v0.4.0

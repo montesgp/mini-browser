@@ -51,7 +51,7 @@ Keep the extracted folder together: the app needs the files next to it.
 | Pin or unpin the top bar (tabs and window buttons) | `Ctrl+Shift+F` | `Cmd+Shift+F` |
 | Back / forward | `Alt+Left` / `Alt+Right` | `Cmd+[` / `Cmd+]` |
 | Reload | `Ctrl+R` | `Cmd+R` |
-| Settings: frame size (`+` and `-` while open), top bar `Auto` or `Pinned` | `Ctrl+,` | `Cmd+,` |
+| Settings: frame size (`+` and `-` while open), top bar `Auto` or `Pinned`, update check `On` or `Off` | `Ctrl+,` | `Cmd+,` |
 | Quit (every window) | `Ctrl+Q` | `Cmd+Q` |
 
 Drag the dark frame to move the window, double-click it to maximize or restore, and drag its edges to resize. A maximized window has no frame, like any other window; restored, the frame comes back. Type a website (`github.com`) or any words to search.
@@ -76,6 +76,8 @@ Drag the dark frame to move the window, double-click it to maximize or restore, 
 - **Pop-ups open as tabs, a few at a time.** Pages can open at most 3 pop-up tabs every 2 seconds in total, so nothing can flood your window.
 - **No downloads, printing or find-in-page** yet.
 - **Keep it updated.** Each release ships a recent Chromium; newer releases carry its security fixes.
+- **It tells you when a new version is out.** Once at startup and then once a day, the app asks GitHub which release is the latest. When it is newer than yours, the home page and the settings box show a small line "mini-browser X.Y.Z is available" with a **Download** button that opens the [download page](https://montesgp.github.io/mini-browser/) in your usual browser. Nothing pops up, and nothing is downloaded or installed for you. If the check fails (offline, for example), nothing shows and it tries again after 1, 5 and 15 minutes, then every hour until it gets an answer. To turn it off, open settings (`Ctrl+,`, `Cmd+,` on Mac) and set **Update check** to `Off`; set it back to `On` and it checks right away.
+- **Updating is replacing the folder.** Quit the app, extract the new version and use it instead of the old folder (on Mac, replace `minibrowser.app` in Applications). Your settings and your browser profile (cookies, logins, history) live in the app data directory (see [Settings file](#settings-file)), not in the app's folder, so they stay.
 
 ## Credits
 
@@ -97,7 +99,7 @@ This part is written for AI coding agents and developers working on or with this
 
 | Path | What it holds |
 | --- | --- |
-| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading state), settings, shortcut table, home page routes and commands, pop-up throttle, window geometry, tab strip layout, top bar visibility, window registry and quit rule. |
+| `crates/core` (`mini-core`) | Platform-independent logic with unit tests: address resolution, tab model (with per-tab loading state), settings, shortcut table, home page routes and commands, update version check, pop-up throttle, window geometry, tab strip layout, top bar visibility, window registry and quit rule. |
 | `crates/app` (`minibrowser`) | The CEF Views shell: window, address box, tabs, top bar (tab strip and window buttons), settings box, loading line, the `mini` scheme and the home page handler. |
 | `crates/app/home` | The home page's `index.html`, `home.css` and `home.js`, embedded in the app with `include_str!`. |
 | `xtask` | The `bundle` tool that builds the app and lays out a runnable CEF bundle (port of cef-rs `bundle-cef-app`, plus `--release` on macOS). |
@@ -168,7 +170,7 @@ Implemented in `crates/core/src/address.rs`:
 New tabs load `mini://home/`, so it is the first entry of their history and Back from the first page returns to it. `mini` is a custom scheme registered in every process type (`crates/app/src/scheme.rs`: the browser process's app, and `SubprocessApp` for the renderer, GPU and utility processes, also in the macOS helper) as standard, secure, display-isolated and fetch-enabled: the home page is a normal origin with its own storage, and web pages cannot link to it or frame it. A server redirect is not checked against the page that started the navigation, so `MiniRequestHandler::on_before_browse` (`crates/app/src/shell/client.rs`) cancels every redirect into `mini:`; the tab keeps its previous page, or stays empty when it had none.
 
 - **Files:** `crates/app/src/shell/home.rs` registers a scheme handler factory for `mini://home/` that serves the embedded files with `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` and `X-Frame-Options: DENY`. Nothing remote loads; fonts are the system's.
-- **Command bridge:** the page calls `fetch('/cmd/<name>')` on its own origin. `mini_core::home::route` maps the URL to a fixed list (`go?input=`, `new-tab`, `close-tab`, `next-tab`, `previous-tab`, `last-tab`, `move-to-new-window`, `return-tab`, `back`, `forward`, `reload`, `top-bar`, `settings`, `padding?step=-1|1`, `quit`) plus `state`; anything else is `404`, and so is a document request (navigation or frame) to `state` or a command, which only `fetch` may call. A command runs only when the request is a `GET` `fetch` from a main frame showing the home document, `mini://home/` or `mini://home/index.html` (`mini_core::home::is_home_url`, checked on the IO thread) and its browser is the active tab, still on the home page (checked on the UI thread, where the command runs through `commands::run`, `settings_box::step` or `tabs::navigate_active`); otherwise the reply is `403` and nothing runs. Every answer is the state JSON `{"platform", "padding", "topBar"}`.
+- **Command bridge:** the page calls `fetch('/cmd/<name>')` on its own origin. `mini_core::home::route` maps the URL to a fixed list (`go?input=`, `new-tab`, `close-tab`, `next-tab`, `previous-tab`, `last-tab`, `move-to-new-window`, `return-tab`, `back`, `forward`, `reload`, `top-bar`, `settings`, `padding?step=-1|1`, `download`, `quit`) plus `state`; anything else is `404`, and so is a document request (navigation or frame) to `state` or a command, which only `fetch` may call. A command runs only when the request is a `GET` `fetch` from a main frame showing the home document, `mini://home/` or `mini://home/index.html` (`mini_core::home::is_home_url`, checked on the IO thread) and its browser is the active tab, still on the home page (checked on the UI thread, where the command runs through `commands::run`, `settings_box::step`, `tabs::navigate_active` or `update::open_download_page`); otherwise the reply is `403` and nothing runs. Every answer is the state JSON `{"platform", "padding", "topBar", "update"}`, where `update` is the newer release's `X.Y.Z` or `null`; the page renders it with `textContent` only.
 - **Input:** `go` resolves its input with `resolve_input`, so `mini://home/cmd/quit` typed in the field is a search and a local path opens the file.
 - **Shell integration:** the tab strip shows `New tab` for the home page and no loading line; `Ctrl/Cmd+L` on the home page focuses its field (`Frame::execute_java_script` calls `window.miniFocusAddress`) instead of opening the address box.
 
@@ -186,16 +188,26 @@ New tabs load `mini://home/`, so it is the first entry of their history and Back
 {
   "padding": 8,
   "searchTemplate": "https://www.google.com/search?q={query}",
-  "topBar": "auto"
+  "topBar": "auto",
+  "checkForUpdates": true
 }
 ```
 
 - `padding`: frame width in pixels, 4 to 32 (default 8, 2 px per settings-box step). Out-of-range integers are clamped.
 - `searchTemplate`: an `http(s)` URL containing `{query}`. Anything else falls back to Google.
 - `topBar`: `"auto"` (default) or `"pinned"`. Any other value means `"auto"` and leaves the other settings intact.
+- `checkForUpdates`: `true` (default) or `false`, whether the app checks GitHub for a newer release (see [Update check](#update-check)). Any other value means `true` and leaves the other settings intact.
 - A corrupt file yields defaults and stays untouched until a setting changes, which rewrites it atomically.
 
 The same directory holds the browser profile (`profile/`). If no app data directory can be determined, the app exits with an error (a dialog on Windows) instead of using a shared temporary folder. If saving settings fails, the settings box says so and the change applies until restart.
+
+## Update check
+
+`crates/app/src/shell/update.rs` asks for `mini_core::update::LATEST_RELEASE_URL` (`https://api.github.com/repos/montesgp/mini-browser/releases/latest`) with CEF's `UrlRequest` from the browser process's UI thread: once from `on_context_initialized` after the first window opens, then every 24 hours (`post_delayed_task`), only while `checkForUpdates` is on. The request sends `Accept: application/vnd.github+json` and a `User-Agent` with the app version, no cookies or credentials (no `UR_FLAG_ALLOW_STORED_CREDENTIALS`), and stops on redirects (`UR_FLAG_STOP_ON_REDIRECT`), so no other URL is fetched. A body over 1 MB cancels it, and so does no answer within 30 s (`REQUEST_TIMEOUT_MS`). `mini_core::update::check_outcome` sorts each check into `Newer`, `UpToDate` (GitHub answered, even with a tag that is not a valid newer one) or `Failed` (network error, non-2xx, timeout, too large, or not JSON with a string `tag_name`, such as a rate-limit message). A failure shows nothing and is retried after `retry_delay_ms` (1, 5, 15 minutes, then hourly) until a check answers; each request and retry is numbered, so a cancelled request's late answer or an older retry does nothing. There is no state file: each run checks again.
+
+`mini_core::update::newer_release_in_response` reads only `tag_name`, which must be exactly `vMAJOR.MINOR.PATCH` (ASCII decimal numbers) and strictly greater than `CARGO_PKG_VERSION` by major, minor, then patch; pre-releases, other formats and equal or older tags announce nothing. The newest such version is kept in UI-thread state; on change the app calls `home::refresh_state()` and updates every settings box. Turning the setting off ends the current round (a counter that stale timers and answers check) and hides the notice; turning it on starts a new round with a check right away.
+
+The Download buttons open the constant `mini_core::update::DOWNLOAD_PAGE_URL` in the default browser: `ShellExecuteW` on Windows, `/usr/bin/open` on macOS, `xdg-open` on Linux. Nothing from the response is opened or rendered except the validated version numbers.
 
 ## Windows and per-window state
 
@@ -252,7 +264,7 @@ Windows releases are not code-signed yet. We have applied to [SignPath Foundatio
 
 - **Builds:** every release archive is built from this repository by [`release.yml`](.github/workflows/release.yml) on GitHub-hosted runners, from a tag on `main`.
 - **Team roles:** committers and reviewers: [@montesgp](https://github.com/montesgp); approvers (who approve each release for signing): [@montesgp](https://github.com/montesgp). Changes from anyone else land only through reviewed pull requests.
-- **Privacy:** mini-browser has no telemetry, analytics or accounts, and its own code sends nothing anywhere you did not ask for. It loads the pages you open; text you type that is not an address is sent as a search to the configured search engine (Google by default, under [Google's privacy policy](https://policies.google.com/privacy)). Its web engine, [CEF](https://bitbucket.org/chromiumembedded/cef)/Chromium, may make the network requests that browsing itself needs, such as certificate checks.
+- **Privacy:** mini-browser has no telemetry, analytics or accounts, and its own code sends nothing anywhere you did not ask for, with one exception: the update check, one request at startup and then once a day (retried within the hour when it fails) to GitHub's API (`https://api.github.com/repos/montesgp/mini-browser/releases/latest`, without cookies, carrying only the app's version in its `User-Agent`, under [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)), which you can turn off in settings. It loads the pages you open; text you type that is not an address is sent as a search to the configured search engine (Google by default, under [Google's privacy policy](https://policies.google.com/privacy)). Its web engine, [CEF](https://bitbucket.org/chromiumembedded/cef)/Chromium, may make the network requests that browsing itself needs, such as certificate checks.
 
 ## Verifying downloads
 

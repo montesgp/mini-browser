@@ -87,6 +87,32 @@ button:focus-visible {
   color: var(--text);
 }
 
+.update {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.update[hidden] {
+  display: none;
+}
+
+.update button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--accent);
+}
+
+.update button:hover {
+  background: var(--hover);
+}
+
 .card {
   width: min(520px, 100%);
   margin-top: 20px;
